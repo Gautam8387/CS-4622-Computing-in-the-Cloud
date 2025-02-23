@@ -1,0 +1,118 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:4000
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - UPLOAD_SERVICE_URL=http://upload-service:4002
+      - TRANSCODING_SERVICE_URL=http://transcoding-service:4003
+    depends_on:
+      - auth-service
+      - upload-service
+      - transcoding-service
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    ports:
+      - "4001:4001"
+    environment:
+      - NODE_ENV=development
+      - PORT=4001
+      - MONGODB_URI=mongodb://mongodb:27017/auth
+      - JWT_SECRET=your_jwt_secret_key
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - mongodb
+      - redis
+
+  upload-service:
+    build:
+      context: ./services/upload-service
+      dockerfile: Dockerfile
+    ports:
+      - "4002:4002"
+    environment:
+      - NODE_ENV=development
+      - PORT=4002
+      - AWS_ACCESS_KEY_ID=your_access_key
+      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - AWS_REGION=us-west-2
+      - S3_BUCKET=media-transcoding-uploads
+    volumes:
+      - upload-data:/tmp/uploads
+
+  transcoding-service:
+    build:
+      context: ./services/transcoding-service
+      dockerfile: Dockerfile
+    ports:
+      - "4003:4003"
+    environment:
+      - NODE_ENV=development
+      - PORT=4003
+      - REDIS_URL=redis://redis:6379
+      - AWS_ACCESS_KEY_ID=your_access_key
+      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - AWS_REGION=us-west-2
+      - S3_BUCKET=media-transcoding-processed
+    depends_on:
+      - redis
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    ports:
+      - "4004:4004"
+    environment:
+      - NODE_ENV=development
+      - PORT=4004
+      - REDIS_URL=redis://redis:6379
+      - SMTP_HOST=smtp.mailtrap.io
+      - SMTP_PORT=2525
+      - SMTP_USER=your_smtp_user
+      - SMTP_PASS=your_smtp_password
+    depends_on:
+      - redis
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  mongodb-data:
+  redis-data:
+  upload-data:

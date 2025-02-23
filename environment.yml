@@ -1,0 +1,4 @@
+name: cs4622
+channels:
+  - defaults
+prefix: /home/gautam-ahuja/miniconda3/envs/cs4622

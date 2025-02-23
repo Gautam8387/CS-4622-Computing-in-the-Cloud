@@ -1,0 +1,27 @@
+# ./infrastructure/kubernetes/base/services.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-service
+  namespace: media-transcoding
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 4000
+  selector:
+    app: api-gateway
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transcoding-service
+  namespace: media-transcoding
+spec:
+  type: ClusterIP
+  ports:
+  - port: 4003
+    targetPort: 4003
+  selector:
+    app: transcoding-service
