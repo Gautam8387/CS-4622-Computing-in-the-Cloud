@@ -1,32 +1,72 @@
 # CS-4622-Computing-in-the-Cloud
+## Directory Structure:
+Root Level:
+- `.github/workflows`: CI/CD pipeline configurations
+- `docker-compose.yml`: Local development environment setup
+- `package.json`: Root level dependencies and scripts
 
-Directory Structure:
+Client Directory (`/client`):
+- React application structure with TypeScript
+- Organized by features and common components
+- Separate directories for state management
 
+Services Directory (`/services`). Each microservice has its own:
+- Source code directory
+- Dockerfile for containerization
+- Package configuration
+- Service-specific components
+
+Infrastructure Directory (`/infrastructure`):
+- Terraform configurations for cloud resources
+- Kubernetes manifests for container orchestration
+- Environment-specific configurations
+
+Scripts Directory (`/scripts`):
+- Utility scripts for development, building, and deployment
+- Setup scripts for new developers
+
+Documentation Directory (`/docs`):
+- API documentation
+- Architecture diagrams
+- Deployment guides
+
+Tree:
 ```bash
-./
+.
 ├── PROJECTS.md
 ├── README.md
 ├── client
 │   ├── Dockerfile
 │   ├── README.md
+│   ├── bun.lockb
+│   ├── components.json
 │   ├── eslint.config.js
 │   ├── index.html
+│   ├── package-lock.json
 │   ├── package.json
+│   ├── postcss.config.js
 │   ├── public
-│   │   └── vite.svg
+│   │   └── placeholder.svg
 │   ├── src
 │   │   ├── App.css
 │   │   ├── App.tsx
-│   │   ├── assets
-│   │   │   └── react.svg
 │   │   ├── components
-│   │   │   ├── common
-│   │   │   ├── features
-│   │   │   └── layout
+│   │   │   ├── DropZone.tsx
+│   │   │   ├── FormatSelector.tsx
+│   │   │   ├── TranscodingHistory.tsx
+│   │   │   └── ui
+│   │   │       └── ...
+│   │   ├── hooks
+│   │   │   └── ...
 │   │   ├── index.css
+│   │   ├── lib
+│   │   │   └── utils.ts
 │   │   ├── main.tsx
 │   │   ├── pages
+│   │   │   ├── Index.tsx
+│   │   │   └── NotFound.tsx
 │   │   └── vite-env.d.ts
+│   ├── tailwind.config.ts
 │   ├── tsconfig.app.json
 │   ├── tsconfig.json
 │   ├── tsconfig.node.json
@@ -36,15 +76,29 @@ Directory Structure:
 │   ├── api
 │   ├── architecture
 │   └── deployment
+├── environment.yml
 ├── infrastructure
 │   ├── kubernetes
 │   │   ├── base
+│   │   │   ├── api-gateway-deployment.yaml
+│   │   │   ├── configmap.yaml
+│   │   │   ├── hpa.yaml
+│   │   │   ├── ingress.yaml
+│   │   │   ├── namespace.yaml
+│   │   │   ├── secret.yaml
+│   │   │   ├── services
+│   │   │   │   ├── api-gateway-service.yaml
+│   │   │   │   ├── auth-service.yaml
+│   │   │   │   ├── notification-service.yaml
+│   │   │   │   ├── transcoding-service.yaml
+│   │   │   │   └── upload-service.yaml
+│   │   │   ├── services.yaml
+│   │   │   └── transcoding-service-deployment.yaml
 │   │   └── overlays
 │   └── terraform
 │       ├── environments
 │       ├── modules
 │       └── variables.tf
-├── package.json
 ├── scripts
 │   ├── build.sh
 │   ├── deploy.sh
@@ -93,34 +147,3 @@ Directory Structure:
             ├── services
             └── utils
 ```
-
-Root Level:
-- `.github/workflows`: CI/CD pipeline configurations
-- `docker-compose.yml`: Local development environment setup
-- `package.json`: Root level dependencies and scripts
-
-Client Directory (`/client`):
-- React application structure with TypeScript
-- Organized by features and common components
-- Separate directories for state management
-
-Services Directory (`/services`). Each microservice has its own:
-- Source code directory
-- Dockerfile for containerization
-- Package configuration
-- Service-specific components
-
-Infrastructure Directory (`/infrastructure`):
-- Terraform configurations for cloud resources
-- Kubernetes manifests for container orchestration
-- Environment-specific configurations
-
-Scripts Directory (`/scripts`):
-- Utility scripts for development, building, and deployment
-- Setup scripts for new developers
-
-Documentation Directory (`/docs`):
-- API documentation
-- Architecture diagrams
-- Deployment guides
-
