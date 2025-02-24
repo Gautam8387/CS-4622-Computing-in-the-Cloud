@@ -2,3 +2,4 @@ Flask==2.3.2
 boto3==1.26.0
 redis==4.5.1
 celery==5.2.7
+PyJWT==2.6.0
