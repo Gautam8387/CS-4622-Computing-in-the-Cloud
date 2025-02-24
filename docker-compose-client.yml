@@ -1,0 +1,15 @@
+# Docker for only testing Client
+version: '3.8'
+services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - FLASK_DEBUG=True
+      - SECRET_KEY=client-secret-key
+      - STANDALONE_MODE=True  # Enable standalone mode
+    volumes:
+      - ./client:/app

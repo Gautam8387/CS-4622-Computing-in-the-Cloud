@@ -1,6 +1,25 @@
-# docker-compose.yml
 version: '3.8'
 services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - FLASK_DEBUG=True
+      - SECRET_KEY=client-secret-key
+      - STANDALONE_MODE=False
+      - GOOGLE_CLIENT_ID=your-google-client-id
+      - GOOGLE_CLIENT_SECRET=your-google-client-secret
+      - GITHUB_CLIENT_ID=your-github-client-id
+      - GITHUB_CLIENT_SECRET=your-github-client-secret
+      - REDIRECT_URI=http://localhost:8000/callback
+    depends_on:
+      - api-gateway
+    volumes:
+      - ./client:/app
+
   api-gateway:
     build:
       context: ./services/api-gateway
@@ -20,7 +39,7 @@ services:
       - minio
     volumes:
       - ./services/api-gateway:/app
-      - ./services/common:/app/common  # Mount common utilities
+      - ./services/common:/app/common
 
   auth-service:
     build:
@@ -32,11 +51,16 @@ services:
       - FLASK_DEBUG=True
       - SECRET_KEY=your-secret-key
       - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_CLIENT_ID=your-google-client-id
+      - GOOGLE_CLIENT_SECRET=your-google-client-secret
+      - GITHUB_CLIENT_ID=your-github-client-id
+      - GITHUB_CLIENT_SECRET=your-github-client-secret
+      - REDIRECT_URI=http://localhost:5001/auth/callback
     depends_on:
       - redis
     volumes:
       - ./services/auth-service:/app
-      - ./services/common:/app/common  # Mount common utilities
+      - ./services/common:/app/common
 
   upload-service:
     build:
@@ -56,7 +80,7 @@ services:
       - minio
     volumes:
       - ./services/upload-service:/app
-      - ./services/common:/app/common  # Mount common utilities
+      - ./services/common:/app/common
 
   transcoding-service:
     build:
@@ -73,8 +97,7 @@ services:
       - minio
     volumes:
       - ./services/transcoding-service:/app
-      - ./services/common:/app/common  # Mount common utilities
-      # Temporary storage for transcoding
+      - ./services/common:/app/common
       - transcoding-tmp:/tmp
 
   notification-service:
@@ -83,15 +106,15 @@ services:
       dockerfile: Dockerfile
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - SMTP_HOST=smtp.gmail.com  # Example: Gmail SMTP
+      - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
-      - SMTP_USER=your-gmail@gmail.com  # Replace with your Gmail
-      - SMTP_PASSWORD=your-app-password  # Replace with Gmail App Password
+      - SMTP_USER=your-gmail@gmail.com
+      - SMTP_PASSWORD=your-app-password
     depends_on:
       - redis
     volumes:
       - ./services/notification-service:/app
-      - ./services/common:/app/common  # Mount common utilities
+      - ./services/common:/app/common
 
   redis:
     image: redis:latest
@@ -104,7 +127,7 @@ services:
     image: minio/minio:latest
     ports:
       - "9000:9000"
-      - "9001:9001"  # MinIO Console
+      - "9001:9001"
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
@@ -115,4 +138,4 @@ services:
 volumes:
   redis-data:
   minio-data:
-  transcoding-tmp:  # Temporary storage for transcoding files
+  transcoding-tmp:
