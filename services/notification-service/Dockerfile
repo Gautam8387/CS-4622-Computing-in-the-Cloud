@@ -1,7 +1,9 @@
-FROM node:18-alpine
+FROM python:3.9-slim
+
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+COPY ../common ./common
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-EXPOSE 4004
-CMD ["npm", "run", "start"]
+
+CMD ["python", "notify.py"]

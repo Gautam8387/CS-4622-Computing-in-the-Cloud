@@ -1,7 +1,9 @@
-FROM node:18-alpine
+FROM python:3.9-slim
+
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-EXPOSE 4001
-CMD ["npm", "run", "start"]
+
+EXPOSE 5001
+CMD ["python", "auth.py"]
