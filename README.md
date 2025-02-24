@@ -7,9 +7,8 @@ Root Level:
 - `package.json`: Root level dependencies and scripts
 
 Client Directory (`/client`):
-- React application structure with TypeScript
+- React application structure with Flask
 - Organized by features and common components
-- Separate directories for state management
 
 Services Directory (`/services`). Each microservice has its own:
 - Source code directory
@@ -20,7 +19,7 @@ Services Directory (`/services`). Each microservice has its own:
 Infrastructure Directory (`/infrastructure`):
 - Terraform configurations for cloud resources
 - Kubernetes manifests for container orchestration
-- Environment-specific configurations
+- Terraform modules for reusable infrastructure components
 
 Scripts Directory (`/scripts`):
 - Utility scripts for development, building, and deployment
@@ -34,117 +33,25 @@ Documentation Directory (`/docs`):
 Tree:
 ```bash
 .
-├── PROJECTS.md
-├── README.md
 ├── client
-│   ├── Dockerfile
-│   ├── README.md
-│   ├── bun.lockb
-│   ├── components.json
-│   ├── eslint.config.js
-│   ├── index.html
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── postcss.config.js
-│   ├── public
-│   │   └── placeholder.svg
-│   ├── src
-│   │   ├── App.css
-│   │   ├── App.tsx
-│   │   ├── components
-│   │   │   ├── DropZone.tsx
-│   │   │   ├── FormatSelector.tsx
-│   │   │   ├── TranscodingHistory.tsx
-│   │   │   └── ui
-│   │   │       └── ...
-│   │   ├── hooks
-│   │   │   └── ...
-│   │   ├── index.css
-│   │   ├── lib
-│   │   │   └── utils.ts
-│   │   ├── main.tsx
-│   │   ├── pages
-│   │   │   ├── Index.tsx
-│   │   │   └── NotFound.tsx
-│   │   └── vite-env.d.ts
-│   ├── tailwind.config.ts
-│   ├── tsconfig.app.json
-│   ├── tsconfig.json
-│   ├── tsconfig.node.json
-│   └── vite.config.ts
-├── docker-compose.yml
+│   ├── static
+│   │   ├── css
+│   │   └── js
+│   └── templates
 ├── docs
-│   ├── api
-│   ├── architecture
-│   └── deployment
-├── environment.yml
+│   ├── api
+│   ├── architecture
+│   └── deployment
 ├── infrastructure
-│   ├── kubernetes
-│   │   ├── base
-│   │   │   ├── api-gateway-deployment.yaml
-│   │   │   ├── configmap.yaml
-│   │   │   ├── hpa.yaml
-│   │   │   ├── ingress.yaml
-│   │   │   ├── namespace.yaml
-│   │   │   ├── secret.yaml
-│   │   │   ├── services
-│   │   │   │   ├── api-gateway-service.yaml
-│   │   │   │   ├── auth-service.yaml
-│   │   │   │   ├── notification-service.yaml
-│   │   │   │   ├── transcoding-service.yaml
-│   │   │   │   └── upload-service.yaml
-│   │   │   ├── services.yaml
-│   │   │   └── transcoding-service-deployment.yaml
-│   │   └── overlays
-│   └── terraform
-│       ├── environments
-│       ├── modules
-│       └── variables.tf
+│   ├── kubernetes
+│   │   └── services
+│   └── terraform
 ├── scripts
-│   ├── build.sh
-│   ├── deploy.sh
-│   └── setup.sh
 └── services
     ├── api-gateway
-    │   ├── Dockerfile
-    │   ├── package.json
-    │   └── src
-    │       ├── config
-    │       ├── middlewares
-    │       ├── routes
-    │       └── server.ts
     ├── auth-service
-    │   ├── Dockerfile
-    │   ├── package.json
-    │   └── src
-    │       ├── controllers
-    │       ├── middleware
-    │       ├── models
-    │       ├── server.ts
-    │       └── services
+    ├── common
     ├── notification-service
-    │   ├── Dockerfile
-    │   ├── package.json
-    │   └── src
-    │       ├── controllers
-    │       ├── providers
-    │       ├── server.ts
-    │       └── templates
     ├── transcoding-service
-    │   ├── Dockerfile
-    │   ├── package.json
-    │   └── src
-    │       ├── processors
-    │       ├── queue
-    │       ├── server.ts
-    │       ├── utils
-    │       └── workers
     └── upload-service
-        ├── Dockerfile
-        ├── package.json
-        └── src
-            ├── controllers
-            ├── server.ts
-            ├── services
-            └── utils
 ```
