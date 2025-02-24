@@ -1,3 +1,4 @@
+# ./services/auth-service/auth.py
 from common import setup_logger
 from flask import Flask, jsonify
 

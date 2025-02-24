@@ -1,3 +1,4 @@
+# ./services/transcoding-service/requirements.txt
 celery==5.2.7
 redis==4.5.1
 boto3==1.26.0

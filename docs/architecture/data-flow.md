@@ -1,3 +1,4 @@
+<!-- ./docs/architecture/data-flow.md -->
 The data flow diagram:
 
 ```mermaid
