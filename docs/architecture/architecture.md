@@ -7,15 +7,15 @@ Architectural Overview
 graph TD
     %% Client Layer
     Client[Client Application
-        React + Vite + TypeScript]
+        Python + Flask]
     
     %% API Gateway
     APIGateway[API Gateway
-        Node.js + Express]
+        Python + Express]
     
     %% Authentication
     Auth[Authentication Service
-        Node.js + JWT]
+        Python + JWT]
     MongoDB[(User Data
         MongoDB)]
     Redis[(Sessions & Tokens
@@ -23,13 +23,13 @@ graph TD
     
     %% Upload Service
     Upload[Upload Service
-        Node.js + Multer]
+        Python + Multer]
     S3Raw[(Raw Files
         S3 Storage)]
     
     %% Transcoding Service
     Transcoding[Transcoding Service
-        Node.js + FFmpeg]
+        Python + FFmpeg]
     Queue[Job Management
         Bull Queue]
     Workers[FFmpeg Workers
@@ -39,7 +39,7 @@ graph TD
     
     %% Notification Service
     Notification[Notification Service
-        Node.js]
+        Python]
     EmailService[SMTP Service]
     
     %% Client Connections
