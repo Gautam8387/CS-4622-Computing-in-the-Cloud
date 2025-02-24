@@ -1,109 +1,97 @@
 # docker-compose.yml
 version: '3.8'
-
 services:
-  client:
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./client:/app
-      - /app/node_modules
-    environment:
-      - NODE_ENV=development
-      - VITE_API_URL=http://localhost:4000
-
   api-gateway:
     build:
       context: ./services/api-gateway
       dockerfile: Dockerfile
     ports:
-      - "4000:4000"
+      - "5000:5000"
     environment:
-      - NODE_ENV=development
-      - PORT=4000
-      - AUTH_SERVICE_URL=http://auth-service:4001
-      - UPLOAD_SERVICE_URL=http://upload-service:4002
-      - TRANSCODING_SERVICE_URL=http://transcoding-service:4003
+      - FLASK_DEBUG=True
+      - SECRET_KEY=your-secret-key
+      - REDIS_URL=redis://redis:6379/0
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=transcoding-bucket
     depends_on:
-      - auth-service
-      - upload-service
-      - transcoding-service
+      - redis
+      - minio
+    volumes:
+      - ./services/api-gateway:/app
+      - ./services/common:/app/common  # Mount common utilities
 
   auth-service:
     build:
       context: ./services/auth-service
       dockerfile: Dockerfile
     ports:
-      - "4001:4001"
+      - "5001:5001"
     environment:
-      - NODE_ENV=development
-      - PORT=4001
-      - MONGODB_URI=mongodb://mongodb:27017/auth
-      - JWT_SECRET=your_jwt_secret_key
-      - REDIS_URL=redis://redis:6379
+      - FLASK_DEBUG=True
+      - SECRET_KEY=your-secret-key
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
-      - mongodb
       - redis
+    volumes:
+      - ./services/auth-service:/app
+      - ./services/common:/app/common  # Mount common utilities
 
   upload-service:
     build:
       context: ./services/upload-service
       dockerfile: Dockerfile
     ports:
-      - "4002:4002"
+      - "5002:5002"
     environment:
-      - NODE_ENV=development
-      - PORT=4002
-      - AWS_ACCESS_KEY_ID=your_access_key
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
-      - AWS_REGION=us-west-2
-      - S3_BUCKET=media-transcoding-uploads
+      - FLASK_DEBUG=True
+      - REDIS_URL=redis://redis:6379/0
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=transcoding-bucket
+    depends_on:
+      - redis
+      - minio
     volumes:
-      - upload-data:/tmp/uploads
+      - ./services/upload-service:/app
+      - ./services/common:/app/common  # Mount common utilities
 
   transcoding-service:
     build:
       context: ./services/transcoding-service
       dockerfile: Dockerfile
-    ports:
-      - "4003:4003"
     environment:
-      - NODE_ENV=development
-      - PORT=4003
-      - REDIS_URL=redis://redis:6379
-      - AWS_ACCESS_KEY_ID=your_access_key
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
-      - AWS_REGION=us-west-2
-      - S3_BUCKET=media-transcoding-processed
+      - REDIS_URL=redis://redis:6379/0
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=transcoding-bucket
     depends_on:
       - redis
+      - minio
+    volumes:
+      - ./services/transcoding-service:/app
+      - ./services/common:/app/common  # Mount common utilities
+      # Temporary storage for transcoding
+      - transcoding-tmp:/tmp
 
   notification-service:
     build:
       context: ./services/notification-service
       dockerfile: Dockerfile
-    ports:
-      - "4004:4004"
     environment:
-      - NODE_ENV=development
-      - PORT=4004
-      - REDIS_URL=redis://redis:6379
-      - SMTP_HOST=smtp.mailtrap.io
-      - SMTP_PORT=2525
-      - SMTP_USER=your_smtp_user
-      - SMTP_PASS=your_smtp_password
+      - REDIS_URL=redis://redis:6379/0
+      - SMTP_HOST=smtp.gmail.com  # Example: Gmail SMTP
+      - SMTP_PORT=587
+      - SMTP_USER=your-gmail@gmail.com  # Replace with your Gmail
+      - SMTP_PASSWORD=your-app-password  # Replace with Gmail App Password
     depends_on:
       - redis
-
-  mongodb:
-    image: mongo:latest
-    ports:
-      - "27017:27017"
     volumes:
-      - mongodb-data:/data/db
+      - ./services/notification-service:/app
+      - ./services/common:/app/common  # Mount common utilities
 
   redis:
     image: redis:latest
@@ -112,7 +100,19 @@ services:
     volumes:
       - redis-data:/data
 
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"  # MinIO Console
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+
 volumes:
-  mongodb-data:
   redis-data:
-  upload-data:
+  minio-data:
+  transcoding-tmp:  # Temporary storage for transcoding files
