@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+    <h1 class="mb-4 text-dark">Media Transcoding Service</h1>
+    <p class="text-muted mb-4">Convert your media files to any format. Fast, secure, and reliable.</p>
+    <div class="card p-4 shadow-sm">
+        {% if user %}
+            <div class="mb-3">
+                <p>Welcome, {{ user.email }}! <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-danger">Sign Out</a></p>
+            </div>
+        {% else %}
+            <div class="mb-3">
+                <p class="text-muted mb-2">Sign in to see previous transcoding jobs</p>
+                <a href="{{ url_for('login_google') }}" class="btn btn-primary me-2">Sign In with Google</a>
+                <a href="{{ url_for('login_github') }}" class="btn btn-dark">Sign In with GitHub</a>
+            </div>
+        {% endif %}
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="email" class="form-label">Email (for download link)</label>
+                <input type="email" class="form-control" id="email" name="email" required {% if user %}value="{{ user.email }}"{% endif %} readonly>
+            </div>
+            <div class="mb-3">
+                <label for="file" class="form-label">Select File</label>
+                <input type="file" class="form-control d-none" id="file" name="file" accept="video/*,audio/*" required>
+                <div id="dropZone" class="drop-zone mt-2">
+                    <p>Drag & drop your files here</p>
+                    <p>or click to select files for transcoding</p>
+                </div>
+            </div>
+            <div id="formatSelector" class="mb-3 d-none">
+                <label for="output_format" class="form-label">Output Format</label>
+                <select class="form-select" id="output_format" name="output_format" required></select>
+            </div>
+            <button type="submit" class="btn btn-outline-secondary" id="submitBtn" disabled>Start Transcoding</button>
+        </form>
+        <div id="status" class="mt-3"></div>
+    </div>
+    {% if jobs %}
+        <div class="card p-4 shadow-sm mt-4">
+            <h2 class="mb-3 text-dark">Recent Transcoding Jobs</h2>
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Input Format</th>
+                        <th>Output Format</th>
+                        <th>Status</th>
+                        <th>Timestamp</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in jobs %}
+                        <tr>
+                            <td>{{ job.filename }}</td>
+                            <td>{{ job.input_format }}</td>
+                            <td>{{ job.output_format }}</td>
+                            <td>
+                                {% if job.status == 'completed' %}
+                                    <span class="text-success">✓ Completed</span>
+                                {% else %}
+                                    <span class="text-danger">✗ Failed</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ job.timestamp }}</td>
+                            <td><a href="{{ job.download_url }}" class="btn btn-sm btn-outline-secondary">↓</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+{% endblock %}

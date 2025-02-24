@@ -1,7 +1,10 @@
-FROM node:18-alpine
+# ./client/Dockerfile
+FROM python:3.9-slim
+
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-EXPOSE 3000
-CMD ["npm", "run", "dev"]
+
+EXPOSE 8000
+CMD ["python", "app.py"]
