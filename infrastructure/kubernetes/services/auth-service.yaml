@@ -1,0 +1,39 @@
+# ./infrastructure/kubernetes/services/auth-service.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  labels:
+    app: auth-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+      - name: auth-service
+        image: auth-service:latest
+        ports:
+        - containerPort: 5001
+        env:
+        - name: REDIS_URL
+          value: "redis://redis:6379/0"
+        - name: SECRET_KEY
+          value: "" # secret-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+spec:
+  selector:
+    app: auth-service
+  ports:
+  - port: 5001
+    targetPort: 5001
+  type: ClusterIP

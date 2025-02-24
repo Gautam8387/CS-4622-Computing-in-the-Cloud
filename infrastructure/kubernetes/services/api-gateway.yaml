@@ -1,0 +1,49 @@
+# ./infrastructure/kubernetes/services/api-gateway.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+      - name: api-gateway
+        image: api-gateway:latest  # ECR image in production
+        ports:
+        - containerPort: 5000
+        env:
+        - name: FLASK_DEBUG
+          value: "True"
+        - name: SECRET_KEY
+          value: "" # secret-key
+        - name: REDIS_URL # REDIS_URL
+          value: "redis://redis:6379/0"
+        - name: S3_ENDPOINT_URL
+          value: "http://minio:9000"
+        - name: S3_ACCESS_KEY
+          value: "minioadmin"
+        - name: S3_SECRET_KEY
+          value: "minioadmin"
+        - name: S3_BUCKET
+          value: "transcoding-bucket"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+spec:
+  selector:
+    app: api-gateway
+  ports:
+  - port: 5000
+    targetPort: 5000
+  type: LoadBalancer  # Use NodePort for local testing
