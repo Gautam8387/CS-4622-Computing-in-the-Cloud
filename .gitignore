@@ -7,3 +7,6 @@ __pycache__/
 # React
 node_modules/
 build/
+
+# Prompts
+prompt*
