@@ -1,5 +1,5 @@
 <!-- ./docs/architecture/data-flow.md -->
-The data flow diagram:
+# The data flow diagram
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'edgeLabelBackground': '#ffffff00', 'labelTextColor': '#000000', 'noteBkgColor': '#fff3e0', 'noteTextColor': '#000000' }}}%%
