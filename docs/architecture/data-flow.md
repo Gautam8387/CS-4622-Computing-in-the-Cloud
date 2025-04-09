@@ -23,7 +23,7 @@ sequenceDiagram
     
     TS->>Q: Poll for Jobs
     Q->>TS: Send Job
-    TS->>Hot: Get Original File
+    Hot->>TS: Get Original File
     TS->>Hot: Store Converted File
     TS->>Q: Update Job Status
     

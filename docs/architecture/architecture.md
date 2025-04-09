@@ -11,11 +11,11 @@ graph TD
     
     %% API Gateway
     APIGateway[API Gateway
-        Python + Express]
+        Python + Flask]
     
     %% Authentication
     Auth[Authentication Service
-        Python + JWT]
+        Google + GitHub]
     MongoDB[(User Data
         MongoDB)]
     Redis[(Sessions & Tokens
@@ -23,7 +23,7 @@ graph TD
     
     %% Upload Service
     Upload[Upload Service
-        Python + Multer]
+        Python]
     S3Raw[(Raw Files
         S3 Storage)]
     
@@ -31,7 +31,7 @@ graph TD
     Transcoding[Transcoding Service
         Python + FFmpeg]
     Queue[Job Management
-        Bull Queue]
+        Queue]
     Workers[FFmpeg Workers
         Docker Containers]
     S3Processed[(Processed Files
@@ -70,6 +70,9 @@ graph TD
     %% Notification Service Connections
     Notification -->|Send| EmailService
     Notification -->|Read| Redis
+    
+    %% New Connection: Redis to MongoDB
+    Redis -->|Update| MongoDB
     
     %% Styling
     classDef client fill:#e1f5fe,stroke:#01579b
