@@ -1,4 +1,5 @@
 # ./services/transcoding-service/requirements.txt
-celery==5.2.7
-redis==4.5.1
-boto3==1.26.0
+celery==5.3.6 # Use a specific, recent version consistently
+redis==4.5.1 # Or newer compatible version
+boto3==1.26.0 # Or newer
+python-dotenv==1.0.0

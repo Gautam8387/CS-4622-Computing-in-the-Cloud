@@ -1,6 +1,7 @@
 # ./services/auth-service/requirements.txt
 Flask==2.3.2
-PyJWT==2.6.0
-redis==4.5.1
+PyJWT==2.6.0 # For creating JWTs
+redis==4.5.1 # Optional: If using Redis for sessions/blocklist
 authlib==1.2.0
-requests-oauthlib==1.3.1
+requests==2.31.0 # Needed by Authlib for fetching user info
+python-dotenv==1.0.0

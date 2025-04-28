@@ -1,2 +1,4 @@
 # ./services/notification-service/requirements.txt
-redis==4.5.1
+celery==5.3.6 # Match version with other services
+redis==4.5.1 # Or newer compatible version
+python-dotenv==1.0.0

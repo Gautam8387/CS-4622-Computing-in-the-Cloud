@@ -1,2 +1,4 @@
 # ./services/upload-service/requirements.txt
 Flask==2.3.2
+boto3==1.26.0 # Needed for S3 interaction via common.storage
+python-dotenv==1.0.0
