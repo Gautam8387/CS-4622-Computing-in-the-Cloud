@@ -11,3 +11,6 @@ build/
 # Prompts
 prompt*
 tmp/
+
+# Environment files
+.env
