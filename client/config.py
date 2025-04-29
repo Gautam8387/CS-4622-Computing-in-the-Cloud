@@ -1,39 +1,76 @@
 # ./client/config.py
+
 import os
 
-from dotenv import load_dotenv
+# --- General Flask Settings ---
+# Determine run environment (development or production)
+FLASK_ENV = os.environ.get('FLASK_ENV', 'production').lower()
+DEBUG = FLASK_ENV == 'development'
 
-load_dotenv()  # Load .env file if present
+# --- Flask Secret Key (CRITICAL for session security) ---
+# Reads the specific variable name used in docker-compose.yml for this service
+SECRET_KEY = os.environ.get('CLIENT_SECRET_KEY')
 
-# Use FLASK_ENV for consistency (development, production)
-FLASK_ENV = os.getenv("FLASK_ENV", "production")
-DEBUG = FLASK_ENV == "development"
-# It's crucial to use a strong, unique secret key, especially for sessions
-SECRET_KEY = os.getenv("SECRET_KEY", "change-this-insecure-default-key")
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
-# The client app handles the callback from the OAuth provider
-OAUTH_CALLBACK_URL = os.getenv("OAUTH_CALLBACK_URL", "http://localhost:8000/callback")
-# URLs for backend services
-API_GATEWAY_URL = os.getenv(
-    "API_GATEWAY_URL", "http://localhost:5000"
-)  # Default for standalone run
-AUTH_SERVICE_URL = os.getenv(
-    "AUTH_SERVICE_URL", "http://localhost:5001"
-)  # Default for standalone run
+# Security check: Ensure a secret key is set, especially in production
+if not SECRET_KEY:
+    if DEBUG:
+        print("\n" + "="*50)
+        print("WARNING: CLIENT_SECRET_KEY environment variable is not set.")
+        print("Using a default, INSECURE key for development purposes ONLY.")
+        print("Please set CLIENT_SECRET_KEY in your .env file.")
+        print("="*50 + "\n")
+        SECRET_KEY = 'temporary-insecure-client-dev-key-CHANGE-ME'
+    else:
+        # Fail hard in production if no secret key is provided
+        raise ValueError("FATAL ERROR: CLIENT_SECRET_KEY environment variable must be set in production.")
 
-# Feature flag for standalone mode (useful for frontend dev without full backend)
-STANDALONE_MODE = os.getenv("STANDALONE_MODE", "False") == "True"
+# --- Application Mode ---
+# Controls whether to run in standalone/mock mode
+STANDALONE_MODE = os.environ.get('STANDALONE_MODE', 'False').lower() in ('true', '1', 't', 'yes')
 
-# Ensure critical OAuth variables are set if not in standalone mode
+# --- OAuth Client Credentials ---
+# These MUST be set in your .env file for OAuth login to work
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
+GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
+GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID')
+GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET')
+
+# --- OAuth Callback URL ---
+# The URL the OAuth provider redirects back to. Must match provider configuration.
+# Using url_for in the route is often more reliable, but this can be a fallback.
+OAUTH_CALLBACK_URL = os.environ.get('OAUTH_CALLBACK_URL', 'http://localhost:8000/callback')
+
+# --- Backend Service URLs ---
+# How the client backend contacts other microservices
+API_GATEWAY_URL = os.environ.get('API_GATEWAY_URL', 'http://api-gateway:5000')
+AUTH_SERVICE_URL = os.environ.get('AUTH_SERVICE_URL', 'http://auth-service:5001')
+
+# --- Media Format Definitions ---
+# Central place to define supported formats
+VIDEO_FORMATS = {'mp4', 'avi', 'mov', 'mkv', 'webm'}
+AUDIO_FORMATS = {'mp3', 'wav', 'flac', 'aac'}
+
+# --- Configuration Loading Feedback (for debugging) ---
+# This will print in the container logs when the Flask app starts
+print("\n" + "="*50)
+print("Client Service Configuration Loaded")
+print("="*50)
+print(f"  FLASK_ENV:          {FLASK_ENV}")
+print(f"  DEBUG Mode:         {DEBUG}")
+print(f"  STANDALONE_MODE:    {STANDALONE_MODE}")
+print(f"  Secret Key Set:     {'YES' if SECRET_KEY and SECRET_KEY != 'temporary-insecure-client-dev-key-CHANGE-ME' else 'NO (Using default or not set!)'}")
+print(f"  Google Client ID:   {'Set' if GOOGLE_CLIENT_ID else 'NOT SET'}")
+print(f"  Google Secret:      {'Set' if GOOGLE_CLIENT_SECRET else 'NOT SET'}")
+print(f"  GitHub Client ID:   {'Set' if GITHUB_CLIENT_ID else 'NOT SET'}")
+print(f"  GitHub Secret:      {'Set' if GITHUB_CLIENT_SECRET else 'NOT SET'}")
+print(f"  OAuth Callback URL: {OAUTH_CALLBACK_URL}")
+print(f"  API Gateway URL:    {API_GATEWAY_URL}")
+print(f"  Auth Service URL:   {AUTH_SERVICE_URL}")
+print("="*50 + "\n")
+
+# Check if critical OAuth variables are missing
 if not STANDALONE_MODE:
-    if not all(
-        [GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET]
-    ):
-        print("Warning: OAuth Client ID/Secrets are not fully configured.")
-
-# Supported formats (can be moved to a shared location if needed by backend too)
-VIDEO_FORMATS = {"mp4", "avi", "mov", "mkv", "webm"}
-AUDIO_FORMATS = {"mp3", "wav", "flac", "aac"}
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        print("WARNING: Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) are missing or incomplete in the environment. Google login will fail.")
+    if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
+        print("WARNING: GitHub OAuth credentials (GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET) are missing or incomplete in the environment. GitHub login will fail.")
