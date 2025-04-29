@@ -96,7 +96,7 @@ def exchange_token():
     if not data or 'provider' not in data or 'token' not in data:
         logger.error("Token exchange request missing provider or token.")
         return jsonify({"error": "Missing provider or token in request"}), 400
-    if data['provider'] == 'google' and 'nonce' not in data:
+    if data['provider'] == 'google' and data.get('nonce') is None:
          logger.error("Token exchange request for Google missing nonce.")
          return jsonify({"error": "Missing nonce in request for Google"}), 400
 

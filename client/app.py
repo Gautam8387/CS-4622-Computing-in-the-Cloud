@@ -6,6 +6,7 @@ from mimetypes import guess_type
 
 import requests
 from authlib.integrations.flask_client import OAuth
+from authlib.integrations.base_client.errors import MismatchingStateError
 from flask import (
     Flask,
     flash,
@@ -84,13 +85,17 @@ def login(provider):
         app.logger.error(f"Error generating callback URL for 'callback' route: {e}")
         flash(f"Internal server error generating redirect.", "error")
         return redirect(url_for("index"))
+    
+    plain_state = secrets.token_urlsafe(16)
+    # Combine provider name and random state (use a separator)
+    state = f"{provider}:{plain_state}"
+    session['oauth_plain_state'] = plain_state # Store only the random part if needed later
+    
 
     # --- Generate and Store State & Nonce ---
-    state = secrets.token_urlsafe(16)
     nonce = secrets.token_urlsafe(16) # Generate nonce
-    session['oauth_state'] = state # Store state in session for CSRF
     session['oauth_nonce'] = nonce # Store nonce in session for OIDC
-    app.logger.debug(f"Generated OAuth state: {state}")
+    app.logger.debug(f"Generated OAuth combined state for {provider}: '{state}'")
     app.logger.debug(f"Generated OAuth nonce: {nonce}")
     # --------------------------------------
 
@@ -105,32 +110,50 @@ def login(provider):
 
 @app.route("/callback")
 def callback():
-    """Handles the callback from the OAuth provider."""
-
-    # --- State Validation (CSRF Protection) ---
+    # --- State Validation & Provider Extraction ---
     received_state = request.args.get('state')
-    expected_state = session.pop('oauth_state', None)
+    # Check if state exists and contains the separator
+    if not received_state or ':' not in received_state:
+        app.logger.warning(f"Invalid or missing state received in callback: {received_state}")
+        flash("Authentication failed due to invalid state parameter.", "error")
+        return redirect(url_for('index'))
+
+    # Extract provider and the random part from the combined state
+    try:
+        provider_name, plain_state_received = received_state.split(':', 1)
+    except ValueError:
+        # Log the malformed state for debugging
+        app.logger.warning(f"Could not parse provider from state: {received_state}")
+        flash("Authentication failed due to malformed state.", "error")
+        return redirect(url_for('index'))
+
+    # Retrieve the original random part stored in session
+    expected_plain_state = session.pop('oauth_plain_state', None)
     expected_nonce = session.pop('oauth_nonce', None) # Also retrieve nonce
 
-    if not expected_state or received_state != expected_state:
-        app.logger.warning("Invalid OAuth state received.")
-        flash("Authentication failed due to invalid state (CSRF protection). Please try again.", "error")
+    # Validate the random part of the state
+    if not expected_plain_state or plain_state_received != expected_plain_state:
+        # Log both expected and received state for debugging
+        app.logger.warning(f"Mismatching state: Received plain state '{plain_state_received}', Expected plain state '{expected_plain_state}'")
+        flash("Authentication failed due to state mismatch (CSRF protection). Please try again.", "error")
         return redirect(url_for('index'))
-    app.logger.debug(f"Received valid OAuth state: {received_state}")
-    # -----------------------------------------
 
-    # Determine provider (logic might need refinement)
-    provider_name = "google"
-    # Check referrer or other clues if needed
-    if request.referrer and 'github.com' in request.referrer:
-         provider_name = "github"
-    # If provider was part of state, you could use that too
+    app.logger.debug(f"Received valid OAuth state part: {plain_state_received}")
+    app.logger.info(f"Handling callback for provider determined from state: {provider_name}")
+    # --- End State/Provider Handling ---
+
 
     try:
+        # Now use the correctly determined provider_name
         oauth_provider = getattr(oauth, provider_name)
-        app.logger.info(f"Handling callback for provider: {provider_name}")
 
+        # --- Pass correct state back to Authlib ---
+        # Authlib internally compares the 'state' parameter passed here
+        # with the one extracted from the request URL args by default.
+        # Explicitly passing it might not be strictly necessary but doesn't hurt.
         token = oauth_provider.authorize_access_token()
+    
+
         app.logger.debug(f"Received provider token for {provider_name}")
 
         # --- Exchange provider token for our JWT ---
@@ -138,28 +161,44 @@ def callback():
         exchange_url = f"{auth_service_url}/auth/token"
         payload = {
             "provider": provider_name,
-            "token": token,
-            "nonce": expected_nonce # --- Pass the nonce to auth-service ---
+            "token": token, # Send the whole token dict (access_token, id_token, etc.)
+            # Pass nonce only if it was expected (Google) AND retrieved from session
+            "nonce": expected_nonce if provider_name == 'google' and expected_nonce else None
         }
+        # Remove nonce from payload if it's None (cleaner request to auth-service)
+        if payload["nonce"] is None:
+            del payload["nonce"]
+
         app.logger.info(f"Exchanging token with Auth Service: {exchange_url}")
         response = requests.post(exchange_url, json=payload)
         app.logger.debug(f"Auth Service response status: {response.status_code}")
-        response.raise_for_status()
+        response.raise_for_status() # Raise exception for 4xx/5xx errors
 
         jwt_data = response.json()
-        app.logger.debug(f"Received JWT data from Auth Service")
+        app.logger.debug("Received JWT data from Auth Service")
 
-        session["jwt_token"] = jwt_data["token"]
-        session["user_info"] = jwt_data["user"]
-        app.logger.info(f"User '{jwt_data['user'].get('email')}' successfully logged in via {provider_name}.")
+        # Store JWT and user info in session
+        session["jwt_token"] = jwt_data.get("token")
+        session["user_info"] = jwt_data.get("user")
+        app.logger.info(f"User '{session.get('user_info', {}).get('email')}' successfully logged in via {provider_name}.")
         flash(f"Login via {provider_name.capitalize()} successful!", "success")
 
-    except Exception as e:
-        app.logger.error(f"OAuth Callback Error ({provider_name}): {e}", exc_info=True)
-        flash(f"Authentication via {provider_name.capitalize()} failed. Please try again or contact support.", "error")
 
+    except MismatchingStateError: # Catch the specific error
+         # This block might not even be strictly necessary if the check above works,
+         # but it's good practice to handle specific exceptions if possible.
+         app.logger.error(f"OAuth Callback Error ({provider_name}): Mismatching State Error occurred during authorize_access_token.")
+         flash(f"Authentication security check failed (state mismatch). Please try logging in again.", "error")
+    except Exception as e:
+        # Catch other potential errors from authorize_access_token or JWT exchange
+        app.logger.error(f"OAuth Callback Error ({provider_name}): {e}", exc_info=True) # Log full traceback
+        # Give a generic message to the user
+        flash(f"Authentication via {provider_name.capitalize()} failed after returning from provider. Please try again.", "error")
+
+    # Redirect to index regardless of success/failure inside the try block
     return redirect(url_for("index"))
 
+# ... (rest of your client/app.py) ...
 
 @app.route("/logout")
 def logout():
