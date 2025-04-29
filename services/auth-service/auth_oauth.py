@@ -1,174 +1,260 @@
 # ./services/auth-service/auth_oauth.py
-from datetime import datetime, timedelta
 
-import jwt  # For creating JWTs
-import requests
+import os
+import datetime
+import jwt  # PyJWT library for generating JWTs
+import requests # For GitHub API calls
+import logging
+
+from flask import Flask, request, jsonify, current_app
 from authlib.integrations.flask_client import OAuth
-from common import setup_logger
+# Import necessary components from common, assuming they setup logging/connections
+# Note: Even if auth-service doesn't *use* all common features, importing __init__
+# might trigger imports within common that need libraries like celery, redis, boto3.
+from common import setup_logger # Assuming setup_logger configures logging
 
-# Load environment variables
-from dotenv import load_dotenv
-from flask import (  # Removed url_for as logins are initiated by client
-    Flask,
-    jsonify,
-    request,
-)
+# --- Constants ---
+JWT_ALGORITHM = "HS256"
+JWT_EXP_DELTA_HOURS = 8 # How long the JWT is valid
 
-load_dotenv()
-
+# --- Flask App Setup ---
 app = Flask(__name__)
-app.config.from_pyfile("config.py")  # Load config from config.py
-logger = setup_logger()
 
+# --- Configuration Loading ---
+# Load configuration directly from environment variables
+app.config['SECRET_KEY'] = os.environ.get('AUTH_SERVICE_SECRET_KEY') # Use specific key name
+app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
+app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
+app.config['GITHUB_CLIENT_ID'] = os.environ.get('GITHUB_CLIENT_ID')
+app.config['GITHUB_CLIENT_SECRET'] = os.environ.get('GITHUB_CLIENT_SECRET')
+app.config['DEBUG'] = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
+
+# --- Logging Setup ---
+# Use the logger from common or configure a basic one
+log_level = logging.DEBUG if app.config['DEBUG'] else logging.INFO
+# Assuming setup_logger exists and works, otherwise use basicConfig:
+# logging.basicConfig(level=log_level, format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+# logger = logging.getLogger(__name__) # Use module-specific logger if basicConfig is used
+# If setup_logger handles everything:
+try:
+    setup_logger() # Configure global logging settings
+    logger = logging.getLogger('auth_service') # Get a specific logger for this service
+    logger.setLevel(log_level) # Optionally set level specifically for this logger
+    logger.info("Logging configured via common.setup_logger.")
+except Exception as e:
+    # Fallback if setup_logger fails or has issues
+    logging.basicConfig(level=log_level, format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+    logger = logging.getLogger('auth_service')
+    logger.error(f"Failed to configure logging via common.setup_logger: {e}. Using basicConfig.", exc_info=True)
+
+# --- Validate Configuration ---
+if not app.config['SECRET_KEY']:
+    logger.critical("FATAL ERROR: AUTH_SERVICE_SECRET_KEY environment variable is not set.")
+    # Optionally raise an exception to prevent startup
+    # raise ValueError("AUTH_SERVICE_SECRET_KEY environment variable must be set.")
+if not app.config['GOOGLE_CLIENT_ID'] or not app.config['GOOGLE_CLIENT_SECRET']:
+    logger.warning("Google OAuth credentials not fully configured. Google login via this service might fail.")
+if not app.config['GITHUB_CLIENT_ID'] or not app.config['GITHUB_CLIENT_SECRET']:
+    logger.warning("GitHub OAuth credentials not fully configured. GitHub login via this service might fail.")
+
+
+# --- OAuth Setup (Required for parsing/verification) ---
 oauth = OAuth(app)
 
-# Google Config (fetches metadata automatically)
-google = oauth.register(
-    name="google",
+# Google Registration (needed for parse_id_token)
+oauth.register(
+    name='google',
     client_id=app.config["GOOGLE_CLIENT_ID"],
     client_secret=app.config["GOOGLE_CLIENT_SECRET"],
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={"scope": "openid email profile"},
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'} # Scope here doesn't initiate login, just for config
 )
 
-# GitHub Config
-github = oauth.register(
-    name="github",
+# GitHub Registration (needed if using Authlib for API calls, less common here)
+# Often we use 'requests' directly for GitHub token verification via API
+oauth.register(
+    name='github',
     client_id=app.config["GITHUB_CLIENT_ID"],
     client_secret=app.config["GITHUB_CLIENT_SECRET"],
-    access_token_url="https://github.com/login/oauth/access_token",
-    authorize_url="https://github.com/login/oauth/authorize",
-    api_base_url="https://api.github.com/",
-    client_kwargs={"scope": "user:email read:user"},  # request email scope
+    access_token_url='https://github.com/login/oauth/access_token',
+    authorize_url='https://github.com/login/oauth/authorize', # Not used here
+    api_base_url='https://api.github.com/',
+    client_kwargs={'scope': 'user:email read:user'} # Not used directly here
 )
 
+# --- Routes ---
 
-@app.route("/auth/token", methods=["POST"])
+@app.route('/auth/token', methods=['POST'])
 def exchange_token():
     """
-    Exchanges an OAuth provider token (received by the client) for a local JWT.
-    Expects JSON payload: {'provider': 'google'|'github', 'token': <provider_token_object>}
+    Exchanges a provider token (from client app) for a local application JWT.
+    Optionally verifies the provider token.
     """
     data = request.get_json()
-    if not data or "provider" not in data or "token" not in data:
-        return jsonify({"error": "Invalid request payload"}), 400
 
-    provider_name = data["provider"]
-    provider_token = data["token"]  # The token object received by the client's callback
+    # Validate incoming request payload
+    if not data or 'provider' not in data or 'token' not in data:
+        logger.error("Token exchange request missing provider or token.")
+        return jsonify({"error": "Missing provider or token in request"}), 400
+    if data['provider'] == 'google' and data.get('nonce') is None:
+         logger.error("Token exchange request for Google missing nonce.")
+         return jsonify({"error": "Missing nonce in request for Google"}), 400
 
-    if provider_name not in oauth.clients:
+    provider_name = data['provider']
+    provider_token_data = data['token'] # This is the token object from client
+    received_nonce = data.get('nonce') # Use .get() as it might be None for GitHub
+
+    logger.info(f"Received token exchange request for provider: {provider_name}")
+
+    try:
+        # Get the Authlib provider object configured in *this* service
+        # This is primarily needed for Google's parse_id_token
+        oauth_provider = getattr(oauth, provider_name)
+    except AttributeError:
+        logger.error(f"Invalid provider name received for token exchange: {provider_name}")
         return jsonify({"error": f"Unsupported provider: {provider_name}"}), 400
 
-    # Use the provider's client to fetch user info using the provided token
-    oauth_provider = getattr(oauth, provider_name)
     try:
-        # Authlib uses the 'token' object directly for requests
-        if provider_name == "google":
-            # Google uses OIDC userinfo endpoint
-            userinfo_endpoint = oauth_provider.server_metadata.get("userinfo_endpoint")
-            if not userinfo_endpoint:
-                raise Exception("Could not find userinfo endpoint for Google")
-            resp = oauth_provider.get(userinfo_endpoint, token=provider_token)
-            resp.raise_for_status()
-            user_info = resp.json()
-            email = user_info.get("email")
-            name = user_info.get("name")
-            if not email:  # Should typically always be present with 'email' scope
-                raise Exception("Email not found in Google user info")
+        user_info = None # Initialize
 
-        elif provider_name == "github":
-            # GitHub requires separate calls for user profile and email
-            resp_user = oauth_provider.get("user", token=provider_token)
-            resp_user.raise_for_status()
-            user_profile = resp_user.json()
+        # --- Process Google Token ---
+        if provider_name == 'google':
+            if not received_nonce:
+                 logger.warning("Nonce missing in request for Google token exchange (should have been caught earlier).")
+                 raise ValueError("Nonce is required for Google login verification.")
 
-            # Fetch emails
-            resp_emails = oauth_provider.get("user/emails", token=provider_token)
-            resp_emails.raise_for_status()
-            emails = resp_emails.json()
+            logger.debug("Attempting to parse Google ID token.")
+            # parse_id_token verifies signature, expiration, nonce, etc.
+            user_info_from_id_token = oauth_provider.parse_id_token(provider_token_data, nonce=received_nonce)
 
-            email = None
-            primary_email = next((e["email"] for e in emails if e.get("primary")), None)
-            if primary_email:
-                email = primary_email
-            elif emails:  # Fallback to first email if no primary
-                email = emails[0]["email"]
+            # Optional but recommended: Validate audience claim
+            google_client_id = app.config.get('GOOGLE_CLIENT_ID')
+            if google_client_id and user_info_from_id_token.get('aud') != google_client_id:
+               logger.error(f"Invalid audience ('aud') claim in Google id_token: {user_info_from_id_token.get('aud')}")
+               raise ValueError("Invalid audience claim in id_token.")
 
-            if (
-                not email
-            ):  # Use login as fallback identifier if email is missing/private
-                email = user_profile.get("login") + "@github.user"  # Placeholder email
-
-            name = user_profile.get("name") or user_profile.get(
-                "login"
-            )  # Use login if name is missing
-
-        else:
-            raise Exception(f"User info fetching not implemented for {provider_name}")
-
-        # --- Generate JWT Token ---
-        jwt_payload = {
-            "sub": email,  # Subject (standard claim)
-            "email": email,
-            "name": name,
-            "provider": provider_name,
-            "iat": datetime.utcnow(),  # Issued at time
-            "exp": datetime.utcnow()
-            + timedelta(hours=1),  # Expiration time (e.g., 1 hour)
-        }
-        jwt_secret = app.config["SECRET_KEY"]
-        jwt_token = jwt.encode(jwt_payload, jwt_secret, algorithm="HS256")
-
-        logger.info(f"JWT issued for user {email} via {provider_name}")
-
-        # Return JWT and user info to the client
-        return jsonify(
-            {
-                "token": jwt_token,
-                "user": {  # Return consistent user object shape
-                    "email": email,
-                    "name": name,
-                    "provider": provider_name,
-                },
+            # Construct a standardized user_info dictionary
+            user_info = {
+                'email': user_info_from_id_token.get('email'),
+                'name': user_info_from_id_token.get('name'),
+                'sub': user_info_from_id_token.get('sub'), # Google subject ID
+                'picture': user_info_from_id_token.get('picture')
             }
-        ), 200
+            logger.debug("Google id_token successfully parsed and validated.")
+
+        # --- Process GitHub Token ---
+        elif provider_name == 'github':
+            access_token = provider_token_data.get('access_token')
+            if not access_token:
+                logger.error("Missing access_token in token data received from client for GitHub.")
+                raise ValueError("Missing access_token for GitHub")
+
+            logger.debug("Verifying GitHub token by fetching user info.")
+            # Verify token by fetching user info from GitHub API
+            user_api_url = "https://api.github.com/user"
+            headers = {'Authorization': f'Bearer {access_token}', 'Accept': 'application/vnd.github.v3+json'}
+            logger.debug(f"Calling GitHub API: {user_api_url}")
+            resp = requests.get(user_api_url, headers=headers)
+            resp.raise_for_status() # Raise HTTPError for 4xx/5xx responses
+            github_user = resp.json()
+            github_login = github_user.get('login')
+            logger.debug(f"GitHub user data received for login: {github_login}")
+
+            # Fetch emails to get the primary verified one
+            email_api_url = "https://api.github.com/user/emails"
+            logger.debug(f"Calling GitHub Emails API: {email_api_url}")
+            email_resp = requests.get(email_api_url, headers=headers)
+            primary_email = None
+            if email_resp.ok:
+                 emails = email_resp.json()
+                 primary_email_obj = next((e for e in emails if e.get('primary') and e.get('verified')), None)
+                 if primary_email_obj:
+                     primary_email = primary_email_obj.get('email')
+                     logger.debug(f"Found primary verified GitHub email: {primary_email}")
+                 else:
+                     logger.warning(f"Could not find primary verified email for GitHub user {github_login}")
+            else:
+                logger.warning(f"Failed to fetch emails for GitHub user {github_login}, status: {email_resp.status_code}")
+
+            # Construct standardized user_info dictionary
+            user_info = {
+                'email': primary_email, # IMPORTANT: Might be None if not found/verified
+                'name': github_user.get('name') or github_login, # Use name, fallback to login
+                'sub': str(github_user.get('id')), # GitHub user ID as subject
+                'picture': github_user.get('avatar_url')
+            }
+
+        # --- Post-processing Validation ---
+        if not user_info:
+            logger.error(f"User info could not be determined for provider {provider_name} after processing.")
+            raise ValueError("Failed to retrieve user information from provider.")
+        if not user_info.get('email'):
+             # Require an email address to proceed
+             logger.error(f"Could not retrieve a required email address for user '{user_info.get('name')}' from {provider_name}.")
+             raise ValueError(f"Could not retrieve a required email address from {provider_name}.")
+
+        logger.info(f"User info successfully processed for: {user_info.get('email')}")
+
+        # --- Generate Application JWT ---
+        app_secret_key = app.config.get('SECRET_KEY')
+        if not app_secret_key:
+             logger.critical("FATAL: Application SECRET_KEY is not configured in auth-service.")
+             raise ValueError("Application JWT secret key is not configured.")
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        jwt_payload = {
+            'sub': user_info['email'], # Use email as the subject claim
+            'name': user_info.get('name'),
+            'email': user_info['email'],
+            'picture': user_info.get('picture'), # Include picture if available
+            'provider': provider_name,
+            'iat': now_utc, # Issued At
+            'exp': now_utc + datetime.timedelta(hours=JWT_EXP_DELTA_HOURS) # Expiration
+        }
+
+        logger.debug(f"Generating JWT for user {user_info['email']}")
+        app_jwt = jwt.encode(jwt_payload, app_secret_key, algorithm=JWT_ALGORITHM)
+        logger.info(f"JWT successfully generated for user {user_info['email']}")
+
+        # Prepare user data for the response (don't send 'sub' unless needed)
+        user_response_data = {
+            "email": user_info['email'],
+            "name": user_info.get('name'),
+            "picture": user_info.get('picture')
+        }
+
+        return jsonify({"token": app_jwt, "user": user_response_data}), 200
 
     except requests.exceptions.RequestException as e:
-        logger.error(
-            f"Failed to fetch user info from {provider_name}: {e}", exc_info=True
-        )
-        status_code = e.response.status_code if e.response is not None else 500
-        error_detail = str(e)
-        try:  # Try to get more specific error from provider response
-            error_detail = e.response.json()
-        except Exception as e:
-            print(f"Failed to parse error response: {e}")  # Log parsing error but continue
-            pass
-        return jsonify(
-            {
-                "error": f"Failed to validate token with {provider_name}",
-                "details": error_detail,
-            }
-        ), status_code
+        logger.error(f"HTTP Request Error during token exchange ({provider_name}): {e}", exc_info=True)
+        # Check if it was a GitHub API error
+        error_msg = "Failed to communicate with authentication provider API."
+        status_code = 502 # Bad Gateway might be appropriate
+        if provider_name == 'github' and e.response is not None:
+             error_msg = f"Error communicating with GitHub API: {e.response.status_code}"
+             status_code = e.response.status_code # Pass GitHub's error code if possible
+        return jsonify({"error": error_msg}), status_code
+    except ValueError as e:
+        # Handle specific validation errors (missing email, invalid token, etc.)
+        logger.error(f"Validation Error during token exchange ({provider_name}): {e}", exc_info=True)
+        return jsonify({"error": f"Failed to process authentication token: {str(e)}"}), 400 # Bad Request
     except Exception as e:
-        logger.error(
-            f"Error during token exchange for {provider_name}: {e}", exc_info=True
-        )
-        return jsonify(
-            {"error": f"Internal server error during token exchange: {e}"}
-        ), 500
+        # Catch-all for other unexpected errors
+        logger.error(f"Unexpected error during token exchange ({provider_name}): {e}", exc_info=True)
+        return jsonify({"error": "An internal server error occurred during token processing."}), 500
 
 
-# NOTE: Add a logout endpoint for JWT blocklisting for future use
-# @app.route("/auth/logout", methods=["POST"])
-# def logout():
-#     # Requires storing revoked tokens (e.g., in Redis) until they expire
-#     # token = request.headers.get("Authorization", "").split(" ")[-1]
-#     # if token:
-#     #     # Add token JTI (JWT ID) or signature to blocklist in Redis with TTL = remaining validity
-#     #     pass
-#     return jsonify({"message": "Logout endpoint placeholder"}), 200
+# --- Health Check (Optional but Recommended) ---
+@app.route('/health')
+def health_check():
+    # Add checks here if needed (e.g., Redis connection)
+    return jsonify({"status": "ok"}), 200
 
-if __name__ == "__main__":
-    # Auth service runs on port 5001
-    app.run(host="0.0.0.0", port=5001, debug=app.config["DEBUG"])
+# --- Main Execution ---
+if __name__ == '__main__':
+    # Get host/port from env vars or use defaults
+    host = os.environ.get('FLASK_RUN_HOST', '0.0.0.0')
+    port = int(os.environ.get('FLASK_RUN_PORT', '5001'))
+    logger.info(f"Starting Auth Service on {host}:{port} (Debug: {app.config['DEBUG']})...")
+    # Use debug=False in production, run with a proper WSGI server like Gunicorn/Waitress
+    app.run(host=host, port=port, debug=app.config['DEBUG'])

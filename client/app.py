@@ -1,9 +1,12 @@
 # ./client/app.py
 import time
+import secrets
+import logging # Ensure logging is imported
 from mimetypes import guess_type
 
 import requests
 from authlib.integrations.flask_client import OAuth
+from authlib.integrations.base_client.errors import MismatchingStateError
 from flask import (
     Flask,
     flash,
@@ -64,73 +67,147 @@ def index():
     return render_template("index.html", user=user_info, jobs=jobs)
 
 
+
 @app.route("/login/<provider>")
 def login(provider):
     """Redirects to the OAuth provider for authentication."""
-    if provider not in oauth.clients:
-        flash(f"Unknown OAuth provider: {provider}", "error")
+    try:
+        oauth_provider = getattr(oauth, provider)
+    except AttributeError:
+        app.logger.error(f"Attempted to login with unconfigured provider: {provider}")
+        flash(f"Error: Login provider '{provider}' is not configured or enabled.", "error")
         return redirect(url_for("index"))
 
-    # Make sure callback URL is correctly configured
-    redirect_uri = app.config.get("OAUTH_CALLBACK_URL")
-    if not redirect_uri:
-        flash("OAuth callback URL not configured.", "error")
+    try:
+        redirect_uri = url_for('callback', _external=True)
+        app.logger.info(f"Generated Redirect URI for {provider}: '{redirect_uri}'")
+    except Exception as e:
+        app.logger.error(f"Error generating callback URL for 'callback' route: {e}")
+        flash(f"Internal server error generating redirect.", "error")
         return redirect(url_for("index"))
+    
+    plain_state = secrets.token_urlsafe(16)
+    # Combine provider name and random state (use a separator)
+    state = f"{provider}:{plain_state}"
+    session['oauth_plain_state'] = plain_state # Store only the random part if needed later
+    
 
-    # Generate a state parameter for CSRF protection
-    # state = secrets.token_urlsafe(16)
-    # session['oauth_state'] = state
-    # print(f"Generated state: {state}") # Debug
+    # --- Generate and Store State & Nonce ---
+    nonce = secrets.token_urlsafe(16) # Generate nonce
+    session['oauth_nonce'] = nonce # Store nonce in session for OIDC
+    app.logger.debug(f"Generated OAuth combined state for {provider}: '{state}'")
+    app.logger.debug(f"Generated OAuth nonce: {nonce}")
+    # --------------------------------------
 
-    # Use the registered provider object (google or github)
-    oauth_provider = getattr(oauth, provider)
-    # return oauth_provider.authorize_redirect(redirect_uri, state=state) # Add state if using it
-    return oauth_provider.authorize_redirect(redirect_uri)
+    # Pass state AND nonce to the authorization redirect
+    # Note: Nonce is primarily for OpenID Connect (like Google)
+    if provider == 'google':
+        return oauth_provider.authorize_redirect(redirect_uri, state=state, nonce=nonce)
+    else: # GitHub doesn't typically use nonce in basic OAuth2
+        return oauth_provider.authorize_redirect(redirect_uri, state=state)
+
 
 
 @app.route("/callback")
 def callback():
-    """Handles the callback from the OAuth provider."""
-    # Determine provider from URL or state (if implemented)
-    provider_name = "google" if "google" in request.url else "github"
-    oauth_provider = getattr(oauth, provider_name)
+    # --- State Validation & Provider Extraction ---
+    received_state = request.args.get('state')
+    # Check if state exists and contains the separator
+    if not received_state or ':' not in received_state:
+        app.logger.warning(f"Invalid or missing state received in callback: {received_state}")
+        flash("Authentication failed due to invalid state parameter.", "error")
+        return redirect(url_for('index'))
+
+    # Extract provider and the random part from the combined state
+    try:
+        provider_name, plain_state_received = received_state.split(':', 1)
+    except ValueError:
+        # Log the malformed state for debugging
+        app.logger.warning(f"Could not parse provider from state: {received_state}")
+        flash("Authentication failed due to malformed state.", "error")
+        return redirect(url_for('index'))
+
+    # Retrieve the original random part stored in session
+    expected_plain_state = session.pop('oauth_plain_state', None)
+    expected_nonce = session.pop('oauth_nonce', None) # Also retrieve nonce
+
+    # Validate the random part of the state
+    if not expected_plain_state or plain_state_received != expected_plain_state:
+        # Log both expected and received state for debugging
+        app.logger.warning(f"Mismatching state: Received plain state '{plain_state_received}', Expected plain state '{expected_plain_state}'")
+        flash("Authentication failed due to state mismatch (CSRF protection). Please try again.", "error")
+        return redirect(url_for('index'))
+
+    app.logger.debug(f"Received valid OAuth state part: {plain_state_received}")
+    app.logger.info(f"Handling callback for provider determined from state: {provider_name}")
+    # --- End State/Provider Handling ---
+
 
     try:
-        # Authorize access token
+        # Now use the correctly determined provider_name
+        oauth_provider = getattr(oauth, provider_name)
+
+        # --- Pass correct state back to Authlib ---
+        # Authlib internally compares the 'state' parameter passed here
+        # with the one extracted from the request URL args by default.
+        # Explicitly passing it might not be strictly necessary but doesn't hurt.
         token = oauth_provider.authorize_access_token()
-        # print(f"Received provider token: {token}") # Debug
+    
+
+        app.logger.debug(f"Received provider token for {provider_name}")
 
         # --- Exchange provider token for our JWT ---
         auth_service_url = app.config["AUTH_SERVICE_URL"]
         exchange_url = f"{auth_service_url}/auth/token"
         payload = {
             "provider": provider_name,
-            "token": token,  # Send the whole token object
+            "token": token, # Send the whole token dict (access_token, id_token, etc.)
+            # Pass nonce only if it was expected (Google) AND retrieved from session
+            "nonce": expected_nonce if provider_name == 'google' and expected_nonce else None
         }
+        # Remove nonce from payload if it's None (cleaner request to auth-service)
+        if payload["nonce"] is None:
+            del payload["nonce"]
+
+        app.logger.info(f"Exchanging token with Auth Service: {exchange_url}")
         response = requests.post(exchange_url, json=payload)
-        response.raise_for_status()  # Raise exception for bad status codes
+        app.logger.debug(f"Auth Service response status: {response.status_code}")
+        response.raise_for_status() # Raise exception for 4xx/5xx errors
 
         jwt_data = response.json()
-        # print(f"Received JWT data: {jwt_data}") # Debug
+        app.logger.debug("Received JWT data from Auth Service")
 
         # Store JWT and user info in session
-        session["jwt_token"] = jwt_data["token"]
-        session["user_info"] = jwt_data["user"]  # Auth service provides user info
-        flash("Login successful!", "success")
+        session["jwt_token"] = jwt_data.get("token")
+        session["user_info"] = jwt_data.get("user")
+        app.logger.info(f"User '{session.get('user_info', {}).get('email')}' successfully logged in via {provider_name}.")
+        flash(f"Login via {provider_name.capitalize()} successful!", "success")
 
+
+    except MismatchingStateError: # Catch the specific error
+         # This block might not even be strictly necessary if the check above works,
+         # but it's good practice to handle specific exceptions if possible.
+         app.logger.error(f"OAuth Callback Error ({provider_name}): Mismatching State Error occurred during authorize_access_token.")
+         flash(f"Authentication security check failed (state mismatch). Please try logging in again.", "error")
     except Exception as e:
-        print(f"OAuth Callback Error: {e}")  # Log the error
-        flash(f"Authentication failed: {e}", "error")
+        # Catch other potential errors from authorize_access_token or JWT exchange
+        app.logger.error(f"OAuth Callback Error ({provider_name}): {e}", exc_info=True) # Log full traceback
+        # Give a generic message to the user
+        flash(f"Authentication via {provider_name.capitalize()} failed after returning from provider. Please try again.", "error")
 
+    # Redirect to index regardless of success/failure inside the try block
     return redirect(url_for("index"))
 
+# ... (rest of your client/app.py) ...
 
 @app.route("/logout")
 def logout():
     """Logs the user out by clearing the session."""
+    user_email = session.get("user_info", {}).get('email', 'Unknown User')
     # Optional: Call auth service to invalidate JWT if blocklisting is implemented
     session.pop("jwt_token", None)
     session.pop("user_info", None)
+    app.logger.info(f"User '{user_email}' logged out.")
     flash("You have been logged out.", "info")
     return redirect(url_for("index"))
 
@@ -141,22 +218,33 @@ def upload_file():
     # --- Authentication Check ---
     jwt_token = session.get("jwt_token")
     if not jwt_token and not app.config["STANDALONE_MODE"]:
+        app.logger.warning("Upload attempt failed: Authentication required.")
         return jsonify({"error": "Authentication required"}), 401
 
     # --- File and Form Data Validation ---
     if "file" not in request.files:
+        app.logger.warning("Upload attempt failed: No file part in request.")
         return jsonify({"error": "No file part"}), 400
+
     file = request.files["file"]
-    email = request.form.get("email")  # Email might come from JWT instead
+    email_form = request.form.get("email")  # Email from form (might not be needed)
     output_format = request.form.get("output_format")
 
-    # Get user email from session if available
+    # Get user email from session (preferred source)
     user_info = session.get("user_info")
-    if user_info and "email" in user_info:
-        email = user_info["email"]
+    email = user_info.get("email") if user_info else email_form
 
-    if not file or file.filename == "" or not email or not output_format:
-        return jsonify({"error": "File, email, and output format are required"}), 400
+    if not file or file.filename == "":
+      app.logger.warning("Upload attempt failed: No file selected.")
+      return jsonify({"error": "No file selected"}), 400
+    if not email:
+      app.logger.warning("Upload attempt failed: Email missing.")
+      return jsonify({"error": "User email not found"}), 400 # Should not happen if logged in
+    if not output_format:
+      app.logger.warning("Upload attempt failed: Output format missing.")
+      return jsonify({"error": "Output format is required"}), 400
+
+    app.logger.info(f"Upload received for user '{email}', filename '{file.filename}', format '{output_format}'")
 
     # --- File Type Validation ---
     mime_type, _ = guess_type(file.filename)
@@ -168,53 +256,62 @@ def upload_file():
             file_type = "audio"
 
     if file_type == "unknown":
-        return jsonify({"error": "Unsupported file type."}), 400
+        app.logger.warning(f"Upload failed for user '{email}': Unsupported file type '{mime_type or 'none'}'.")
+        return jsonify({"error": f"Unsupported file type: {mime_type or 'Could not determine'}"}), 400
 
     # --- Format Validation ---
     valid_formats = app.config["VIDEO_FORMATS"].union(app.config["AUDIO_FORMATS"])
-    if file_type == "video" and output_format not in valid_formats:
-        return jsonify(
-            {"error": f"Invalid output format '{output_format}' for video"}
-        ), 400
-    if file_type == "audio" and output_format not in app.config["AUDIO_FORMATS"]:
-        return jsonify(
-            {"error": f"Invalid output format '{output_format}' for audio"}
-        ), 400
+    is_video_format = output_format in app.config["VIDEO_FORMATS"]
+    is_audio_format = output_format in app.config["AUDIO_FORMATS"]
+
+    if file_type == "video" and not (is_video_format or is_audio_format): # Video can be converted to audio
+         app.logger.warning(f"Upload failed for user '{email}': Invalid output format '{output_format}' for video input.")
+         return jsonify({"error": f"Invalid output format '{output_format}' for video file."}), 400
+    if file_type == "audio" and not is_audio_format:
+         app.logger.warning(f"Upload failed for user '{email}': Invalid output format '{output_format}' for audio input.")
+         return jsonify({"error": f"Invalid output format '{output_format}' for audio file."}), 400
 
     # --- Standalone Mode Mock Response ---
     if app.config["STANDALONE_MODE"]:
         job_id = f"mock-{int(time.time())}"
-        # Simulate saving job locally if needed for standalone UI
-        # save_mock_job(file.filename, output_format, "pending")
-        return jsonify({"job_id": job_id, "status": "pending"}), 202  # Simulate pending
+        app.logger.info(f"Standalone mode: Mocking upload success for user '{email}', job_id '{job_id}'")
+        return jsonify({"job_id": job_id, "status": "pending"}), 202
 
     # --- Call API Gateway ---
     api_gateway_url = app.config["API_GATEWAY_URL"]
+    upload_endpoint = f"{api_gateway_url}/upload"
     headers = {"Authorization": f"Bearer {jwt_token}"}
-    files = {"file": (file.filename, file.stream, file.content_type)}
-    # Send email and format as form data
+    # Pass file stream correctly
+    files = {"file": (file.filename, file.stream, file.mimetype)}
+    # Send email and format as form data to the gateway
     data = {"email": email, "output_format": output_format}
 
+    app.logger.info(f"Forwarding upload request for user '{email}' to API Gateway: {upload_endpoint}")
     try:
-        response = requests.post(
-            f"{api_gateway_url}/upload", files=files, data=data, headers=headers
-        )
-        response.raise_for_status()  # Check for HTTP errors
-        return jsonify(response.json()), response.status_code
+        response = requests.post(upload_endpoint, files=files, data=data, headers=headers)
+        app.logger.debug(f"API Gateway response status for upload: {response.status_code}")
+        response.raise_for_status()  # Check for HTTP errors (4xx, 5xx)
+        response_data = response.json()
+        app.logger.info(f"Upload successful via API Gateway for user '{email}', job_id '{response_data.get('job_id')}'.")
+        return jsonify(response_data), response.status_code
     except requests.exceptions.RequestException as e:
-        print(f"API Gateway Upload Error: {e}")  # Log error
-        error_message = f"Failed to contact upload service: {e}"
-        # Try to parse error from response if available
+        # Log details about the request error
+        error_message = f"Failed to contact API Gateway upload service: {e}"
+        if e.response is not None:
+            error_message += f" (Status: {e.response.status_code}, Response: {e.response.text[:200]})" # Log first 200 chars
+        app.logger.error(f"API Gateway Upload Error for user '{email}': {error_message}", exc_info=True)
+
+        # Try to parse a specific error from the gateway's response if possible
         try:
             error_details = e.response.json().get("error", str(e))
-            error_message = f"Upload failed: {error_details}"
-        except Exception as e:
-            print(f"Error parsing response: {e}")  # Log error
-            pass
-        return jsonify({"error": error_message}), 500
+            error_message_for_user = f"Upload failed: {error_details}"
+        except Exception:
+            error_message_for_user = "Failed to communicate with the upload service. Please try again later."
+
+        return jsonify({"error": error_message_for_user}), getattr(e.response, 'status_code', 500) # Return gateway status or 500
     except Exception as e:
-        print(f"Unexpected Upload Error: {e}")  # Log error
-        return jsonify({"error": "An unexpected error occurred during upload."}), 500
+        app.logger.error(f"Unexpected Upload Error for user '{email}': {e}", exc_info=True)
+        return jsonify({"error": "An unexpected server error occurred during upload."}), 500
 
 
 @app.route("/status/<job_id>")
@@ -235,21 +332,29 @@ def status(job_id):
 
     jwt_token = session.get("jwt_token")
     if not jwt_token:
+        app.logger.warning(f"Status check failed for job '{job_id}': Authentication required.")
         return jsonify({"error": "Authentication required"}), 401
 
+    user_email = session.get("user_info", {}).get('email', 'Unknown User')
     api_gateway_url = app.config["API_GATEWAY_URL"]
+    status_endpoint = f"{api_gateway_url}/status/{job_id}"
     headers = {"Authorization": f"Bearer {jwt_token}"}
 
+    app.logger.debug(f"Requesting status for job '{job_id}' (user '{user_email}') from API Gateway: {status_endpoint}")
     try:
-        response = requests.get(f"{api_gateway_url}/status/{job_id}", headers=headers)
+        response = requests.get(status_endpoint, headers=headers)
+        app.logger.debug(f"API Gateway response status for status check: {response.status_code}")
         response.raise_for_status()
         return jsonify(response.json()), response.status_code
     except requests.exceptions.RequestException as e:
-        print(f"API Gateway Status Error: {e}")  # Log error
-        return jsonify({"error": f"Failed to get job status: {e}"}), 500
+        error_message = f"Failed to get job status from API Gateway: {e}"
+        if e.response is not None:
+            error_message += f" (Status: {e.response.status_code}, Response: {e.response.text[:200]})"
+        app.logger.error(f"API Gateway Status Error for job '{job_id}' (user '{user_email}'): {error_message}", exc_info=True)
+        return jsonify({"error": "Failed to get job status. Please try again later."}), getattr(e.response, 'status_code', 500)
     except Exception as e:
-        print(f"Unexpected Status Error: {e}")  # Log error
-        return jsonify({"error": "An unexpected error occurred checking status."}), 500
+        app.logger.error(f"Unexpected Status Error for job '{job_id}' (user '{user_email}'): {e}", exc_info=True)
+        return jsonify({"error": "An unexpected server error occurred checking status."}), 500
 
 
 # --- Helper Functions ---
@@ -259,70 +364,53 @@ def get_user_jobs():
     """Fetches recent jobs for the logged-in user from the API Gateway."""
     jwt_token = session.get("jwt_token")
     if not jwt_token or app.config["STANDALONE_MODE"]:
-        return []
+        return [] # No jobs if not logged in or in standalone
 
+    user_email = session.get("user_info", {}).get('email', 'Unknown User')
     api_gateway_url = app.config["API_GATEWAY_URL"]
+    jobs_endpoint = f"{api_gateway_url}/jobs"
     headers = {"Authorization": f"Bearer {jwt_token}"}
 
+    app.logger.debug(f"Fetching job history for user '{user_email}' from API Gateway: {jobs_endpoint}")
     try:
-        response = requests.get(f"{api_gateway_url}/jobs", headers=headers)
+        response = requests.get(jobs_endpoint, headers=headers)
+        app.logger.debug(f"API Gateway response status for jobs fetch: {response.status_code}")
         response.raise_for_status()
-        return response.json()
+        jobs_data = response.json()
+        app.logger.info(f"Successfully fetched {len(jobs_data)} jobs for user '{user_email}'.")
+        return jobs_data
     except requests.exceptions.RequestException as e:
-        print(f"API Gateway Get Jobs Error: {e}")
-        flash("Could not retrieve job history.", "warning")
+        error_message = f"Failed to get job history from API Gateway: {e}"
+        if e.response is not None:
+            error_message += f" (Status: {e.response.status_code}, Response: {e.response.text[:200]})"
+        app.logger.error(f"API Gateway Get Jobs Error for user '{user_email}': {error_message}", exc_info=True)
+        flash("Could not retrieve job history at this time.", "warning")
         return []
     except Exception as e:
-        print(f"Unexpected Get Jobs Error: {e}")
-        flash("An error occurred retrieving job history.", "warning")
+        app.logger.error(f"Unexpected Get Jobs Error for user '{user_email}': {e}", exc_info=True)
+        flash("An unexpected error occurred retrieving job history.", "warning")
         return []
 
 
 def get_mock_jobs():
     """Returns mock job data for standalone mode."""
+    # Simple mock data
     return [
-        {
-            "job_id": "mock-1",
-            "filename": "presentation.mov",
-            "input_format": "MOV",
-            "output_format": "MP4",
-            "status": "completed",
-            "timestamp": "2024-03-10 14:30",
-            "download_url": "#",
-        },
-        {
-            "job_id": "mock-2",
-            "filename": "podcast.wav",
-            "input_format": "WAV",
-            "output_format": "MP3",
-            "status": "completed",
-            "timestamp": "2024-03-10 14:15",
-            "download_url": "#",
-        },
-        {
-            "job_id": "mock-3",
-            "filename": "recording.mkv",
-            "input_format": "MKV",
-            "output_format": "MP4",
-            "status": "failed",
-            "timestamp": "2024-03-10 14:00",
-            "download_url": None,
-        },
-        {
-            "job_id": "mock-4",
-            "filename": "inprogress.avi",
-            "input_format": "AVI",
-            "output_format": "MP4",
-            "status": "pending",
-            "timestamp": "2024-03-10 15:00",
-            "download_url": None,
-        },
+        {"job_id": "mock-1", "filename": "presentation.mov", "output_format": "MP4", "status": "completed", "download_url": "#"},
+        {"job_id": "mock-2", "filename": "podcast.wav", "output_format": "MP3", "status": "completed", "download_url": "#"},
+        {"job_id": "mock-3", "filename": "recording.mkv", "output_format": "MP4", "status": "failed", "download_url": None},
+        {"job_id": "mock-4", "filename": "inprogress.avi", "output_format": "WebM", "status": "pending", "download_url": None},
     ]
 
+# --- Logging Setup ---
+# Configure logging based on DEBUG mode from config.py
+log_level = logging.DEBUG if app.config['DEBUG'] else logging.INFO
+logging.basicConfig(level=log_level, format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    # Use port 8000 as defined in docker-compose
+    # Host 0.0.0.0 makes it accessible externally (within Docker network)
+    # Port 8000 matches docker-compose
+    # debug=app.config['DEBUG'] enables/disables Flask debugger and reloader
+    app.logger.info(f"Starting Flask server (Debug: {app.config['DEBUG']})...")
     app.run(host="0.0.0.0", port=8000, debug=app.config["DEBUG"])
-
-# Running on http://172.28.142.209:8000/

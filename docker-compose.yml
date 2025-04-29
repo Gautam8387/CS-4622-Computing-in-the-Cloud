@@ -2,6 +2,8 @@
 version: '3.8' # Version attribute is okay for compatibility, Compose V2 ignores it.
 services:
   client:
+    env_file:
+      - .env
     # Client doesn't need common, context remains ./client
     build:
       context: ./client
@@ -87,7 +89,7 @@ services:
       # GITHUB_CLIENT_ID: YOUR_GITHUB_CLIENT_ID
       # GITHUB_CLIENT_SECRET: YOUR_GITHUB_CLIENT_SECRET
       - FLASK_ENV=${FLASK_ENV:-development}
-      - SECRET_KEY=${AUTH_SERVICE_SECRET_KEY} # Should match API_GATEWAY_SECRET_KEY
+      - AUTH_SERVICE_SECRET_KEY=${AUTH_SERVICE_SECRET_KEY} # Should match API_GATEWAY_SECRET_KEY
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0} # For optional blocklisting
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
