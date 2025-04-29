@@ -137,17 +137,20 @@ services:
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
+    # --- MODIFIED COMMAND ---
+    command: celery -A celery_app.app worker --loglevel=info -Q notification_queue -n notification_worker@%h
+    # --- END MODIFICATION ---
     env_file:
       - .env
-    volumes: # <-- ADDED Volumes for local development code changes
+    volumes:
       - ./services/notification-service:/app
-      - ./services/common:/app/common # Needs access to common
-    depends_on: # Refined dependencies
+      - ./services/common:/app/common
+    depends_on:
       redis:
         condition: service_healthy
-      mailhog: # Needs SMTP target
-        condition: service_started # Mailhog starts fast
-      minio: # Needs MinIO for presigned URLs via common
+      mailhog:
+        condition: service_started
+      minio:
         condition: service_healthy
     networks:
       - app-network
@@ -157,15 +160,18 @@ services:
     build:
       context: .
       dockerfile: services/transcoding-service/Dockerfile
+    # --- MODIFIED COMMAND ---
+    command: celery -A celery_app.app worker --loglevel=info -c 1 -Q transcoding_queue -n transcoding_worker@%h
+    # --- END MODIFICATION ---
     env_file:
       - .env
-    volumes: # <-- ADDED Volumes for local development code changes
+    volumes:
       - ./services/transcoding-service:/app
-      - ./services/common:/app/common # Needs access to common
-    depends_on: # Refined dependencies
+      - ./services/common:/app/common
+    depends_on:
       redis:
         condition: service_healthy
-      minio: # Needs MinIO for download/upload
+      minio:
         condition: service_healthy
     networks:
       - app-network

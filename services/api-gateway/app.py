@@ -9,6 +9,7 @@ import jwt  # PyJWT
 import redis
 import requests
 from celery import Celery
+
 # from dotenv import dotenv_values
 from flask import Flask, g, jsonify, request  # g for storing user info per request
 from werkzeug.utils import secure_filename  # For getting original filename safely
@@ -177,7 +178,7 @@ def token_required(f):
             logger.info(f"Authenticated user: {g.current_user['email']}")
 
         except jwt.ExpiredSignatureError:
-            logger.warning(f"Expired token received.")
+            logger.warning("Expired token received.")
             return jsonify({"error": "Token has expired"}), 401
         except jwt.InvalidTokenError as e:
             logger.error(f"Invalid token received: {e}")
@@ -291,16 +292,20 @@ def upload_file():
     }
 
     try:
-        # Send task to Celery queue (specify the task name as defined in the worker)
-        # Example task name: 'transcoding.tasks.transcode_media'
+        # --- MODIFIED: Specify the queue ---
         celery_app.send_task(
-            "transcoding.tasks.transcode_media", args=[task_payload], task_id=job_id
+            "transcoding.tasks.transcode_media",
+            args=[task_payload],
+            task_id=job_id,
+            queue="transcoding_queue",  # <--- ADD THIS
         )
-        logger.info(f"Transcoding task queued successfully. Job ID: {job_id}")
+        # --- END MODIFICATION ---
+        logger.info(
+            f"Transcoding task queued successfully to 'transcoding_queue'. Job ID: {job_id}"
+        )
 
     except Exception as e:
         logger.error(f"Failed to queue transcoding task for Job ID {job_id}: {e}")
-        # Consider trying to delete the uploaded file from S3 if queuing fails? (Compensation logic)
         return jsonify({"error": f"Failed to queue transcoding job: {e}"}), 500
 
     # 3. Store Initial Job Metadata in Redis

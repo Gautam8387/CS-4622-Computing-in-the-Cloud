@@ -47,9 +47,7 @@ if not SMTP_CONFIGURED:
     # SES_CONFIGURED = SES_SENDER_EMAIL is not None
 
 
-@shared_task(
-    bind=True, max_retries=3, default_retry_delay=60
-)  # `bind=True` allows access to `self` for retries
+@shared_task(bind=True, name='notification.tasks.send_notification_email', max_retries=3, default_retry_delay=60)
 def send_notification_email(self, payload):
     """
     Celery task to generate a pre-signed URL and send a notification email.

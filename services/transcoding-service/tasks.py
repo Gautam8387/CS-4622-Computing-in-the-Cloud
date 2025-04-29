@@ -139,7 +139,14 @@ def build_ffmpeg_command(input_path, output_path, output_format):
 
 
 # --- Celery Task ---
-@shared_task(bind=True, max_retries=2, default_retry_delay=30, acks_late=True)
+# @shared_task(bind=True, max_retries=2, default_retry_delay=30, acks_late=True)
+@shared_task(
+    bind=True,
+    name="transcoding.tasks.transcode_media",
+    max_retries=2,
+    default_retry_delay=30,
+    acks_late=True,
+)
 def transcode_media(self, payload):
     """
     Celery task to download, transcode, upload media, and update status.
@@ -317,17 +324,22 @@ def transcode_media(self, payload):
         if notification_email and NOTIFICATION_TASK_NAME:
             try:
                 notification_payload = {
+                    # ... payload details ...
                     "job_id": job_id,
                     "notification_email": notification_email,
                     "original_filename": original_filename,
                     "output_format": output_format,
-                    "output_s3_key": output_s3_key,  # Send the key so notification service can generate its own URL
+                    "output_s3_key": output_s3_key,
                 }
+                # --- MODIFIED: Specify the queue ---
                 current_app.send_task(
-                    NOTIFICATION_TASK_NAME, args=[notification_payload]
+                    NOTIFICATION_TASK_NAME,
+                    args=[notification_payload],
+                    queue="notification_queue",  # <--- ADD THIS
                 )
+                # --- END MODIFICATION ---
                 logger.info(
-                    f"Job {job_id}: Notification task sent for {notification_email}"
+                    f"Job {job_id}: Notification task sent for {notification_email} to 'notification_queue'"
                 )
             except Exception as e:
                 # Log error but don't fail the transcoding task itself

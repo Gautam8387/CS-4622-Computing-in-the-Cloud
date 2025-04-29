@@ -10,7 +10,8 @@
     {% if user_info %}
         <section id="upload-section">
             <h3>Start a New Transcoding Job</h3>
-            <form id="upload-form" enctype="multipart/form-data">
+            <!-- Standard HTML Form POST to Flask backend -->
+            <form action="{{ url_for('submit_job') }}" method="POST" enctype="multipart/form-data">
                  <div class="form-group">
                     <label for="email">Email for download link (optional):</label>
                     <input type="email" id="email" name="email" value="{{ user_info.email }}" placeholder="Defaults to your login email">
@@ -18,46 +19,58 @@
                  <div class="form-group">
                      <label for="output_format">Select Output Format:</label>
                      <select id="output_format" name="output_format" required>
-                         <optgroup label="Video">
-                             <option value="mp4">MP4 (H.264/AAC)</option>
-                             <option value="webm">WebM (VP9/Opus)</option>
-                             <option value="avi">AVI</option>
-                             <option value="mov">MOV</option>
-                             <option value="mkv">MKV</option>
-                         </optgroup>
-                         <optgroup label="Audio">
-                             <option value="mp3">MP3</option>
-                             <option value="wav">WAV</option>
-                             <option value="flac">FLAC</option>
-                             <option value="aac">AAC</option>
-                         </optgroup>
+                         <!-- Options -->
+                         <optgroup label="Video"><option value="mp4">MP4 (H.264/AAC)</option><option value="webm">WebM (VP9/Opus)</option><option value="avi">AVI</option><option value="mov">MOV</option><option value="mkv">MKV</option></optgroup>
+                         <optgroup label="Audio"><option value="mp3">MP3</option><option value="wav">WAV</option><option value="flac">FLAC</option><option value="aac">AAC</option></optgroup>
                      </select>
                  </div>
                  <div class="form-group">
                     <label for="media-file">Select File:</label>
-                     <div id="drop-area">
-                        <input type="file" id="media-file" name="media_file" required accept="audio/*,video/*">
-                        <p>Drag & drop your file here or click to select</p>
-                     </div>
-                     <p id="file-info"></p>
+                    <input type="file" id="media-file" name="media_file" required accept="audio/*,video/*,video/x-matroska,.mkv">
                  </div>
                  <button type="submit" id="submit-button">Start Transcoding</button>
             </form>
-            <div id="upload-progress" style="display: none;">
-                <p>Uploading: <span id="upload-percentage">0</span>%</p>
-                <progress id="upload-progress-bar" value="0" max="100"></progress>
-            </div>
-             <div id="job-status-section" style="margin-top: 20px;">
-                 <!-- Status updates will appear here -->
-            </div>
+             <!-- Job status section might only show flashed messages now -->
+             <div id="job-status-section" style="margin-top: 20px;"></div>
         </section>
 
         <section id="job-history-section">
             <h3>Recent Jobs</h3>
+            <!-- History list initially rendered by Jinja2, updated by JS -->
             <ul id="job-history-list">
-                <li>Loading job history...</li>
+                {% if job_history is defined and job_history %} {# Check if defined and not empty #}
+                    {% for job in job_history %}
+                        <li>
+                            {% set job_id_short = job.job_id[:8] if job.job_id else 'N/A' %}
+                            {% set display_name = job.original_filename or job.input_s3_key.split('/')[-1] if job.input_s3_key else 'Unknown File' %}
+                            {% set job_status = job.status | upper if job.status else 'UNKNOWN' %}
+                            {% set status_class = "job-status-" + job_status %}
+                            {% set error_msg = job.error if job.status == 'FAILED' else '' %}
+
+                            <span><strong>Job:</strong> {{ job_id_short }}...</span>
+                            <span><strong>File:</strong> {{ display_name }}</span>
+                            <span><strong>Format:</strong> {{ job.output_format or 'N/A' }}</span>
+                            {# Use the custom datetimeformat filter #}
+                            <span><strong>Updated:</strong> {{ job.timestamp | datetimeformat }}</span> {# Changed label from Submitted #}
+                            <span class="job-status {{ status_class }}">{{ job_status }}</span>
+
+                            {% if job.status == 'COMPLETED' and job.download_url %}
+                                <a href="{{ job.download_url }}" class="button download-link" target="_blank" download>Download</a>
+                            {% endif %}
+
+                            {% if error_msg %}
+                                <span class="job-error-message" style="color: #dc3545; font-size: 0.9em; flex-basis: 100%; margin-top: 5px;">
+                                    Error: {{ error_msg }}
+                                </span>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                {% else %}
+                    {# Initial message if no history or error during server render #}
+                    <li><em>No recent jobs found or history unavailable.</em></li>
+                {% endif %}
             </ul>
-             <button id="refresh-jobs-button">Refresh History</button>
+             <!-- Removed Refresh History Button -->
         </section>
 
     {% else %}
@@ -67,5 +80,11 @@
 {% endblock %}
 
 {% block scripts_extra %}
-<!-- Add any page-specific scripts if needed -->
+<!-- Pass config to JS using the script tag -->
+<script>
+    // Ensure APP_CONFIG exists even if js_config is None/empty
+    window.APP_CONFIG = {{ js_config | tojson | safe }};
+</script>
+<!-- Ensure app.js is loaded after APP_CONFIG is defined -->
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
 {% endblock %}
