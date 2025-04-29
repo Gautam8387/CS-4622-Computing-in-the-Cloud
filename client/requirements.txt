@@ -1,5 +1,6 @@
 # ./client/requirements.txt
-Flask==2.3.2
-requests==2.31.0
-authlib==1.2.0
-python-dotenv==1.0.0
+Flask>=2.0
+requests>=2.25
+python-dotenv>=0.19
+PyJWT>=2.0
+gunicorn>=20.1 # <-- ADD THIS LINE

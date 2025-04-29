@@ -1,7 +1,6 @@
 # ./services/auth-service/requirements.txt
-Flask==2.3.2
-PyJWT==2.6.0 # For creating JWTs
-redis==4.5.1 # Optional: If using Redis for sessions/blocklist
-authlib==1.2.0
-requests==2.31.0 # Needed by Authlib for fetching user info
-python-dotenv==1.0.0
+Flask>=2.0
+requests>=2.25
+python-dotenv>=0.19
+PyJWT>=2.0
+gunicorn>=20.1 # <-- ADD THIS LINE

@@ -1,4 +1,7 @@
 # ./services/notification-service/requirements.txt
-celery==5.3.6 # Match version with other services
-redis==4.5.1 # Or newer compatible version
-python-dotenv==1.0.0
+celery>=5.0
+redis>=4.0 # Celery dependency for broker/backend
+python-dotenv>=0.19
+# boto3 will be needed by common.storage, but let's assume it's installed via common's setup if common were a package
+# Or add boto3 here if common is just copied/mounted:
+boto3>=1.18

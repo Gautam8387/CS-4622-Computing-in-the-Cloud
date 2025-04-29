@@ -1,13 +1,22 @@
 # ./services/transcoding-service/Dockerfile
 FROM python:3.9-slim
-
-# Install FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 WORKDIR /app
-COPY common ./common
-COPY transcoding-service/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY transcoding-service/ .
+ENV PYTHONPATH="${PYTHONPATH}:/app"
 
-CMD ["celery", "-A", "transcode", "worker", "--loglevel=info"]
+# install ffmpeg
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY services/transcoding-service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# service-specific code
+COPY services/transcoding-service/. .
+
+# common utilities
+COPY services/common common
+
+CMD ["celery", "-A", "celery_app.app", "worker", "--loglevel=info", "-c", "1", "-n", "transcoding_worker@%h"]

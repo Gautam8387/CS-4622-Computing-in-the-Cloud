@@ -1,120 +1,231 @@
 /* ./client/static/css/style.css */
-.drop-zone {
-    border: 2px dashed #007bff;
-    padding: 20px;
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+header, footer {
+    background-color: #333;
+    color: #fff;
+    padding: 1rem 2rem;
     text-align: center;
-    background-color: #f8f9fa;
-    cursor: pointer;
+}
+
+header h1 {
+    margin: 0;
+    display: inline-block; /* Keep on same line as nav potentially */
+}
+
+header nav {
+    display: inline-block;
+    margin-left: 20px;
+}
+
+header nav span {
+    margin-right: 15px;
+}
+
+main {
+    padding: 2rem;
+    max-width: 900px;
+    margin: 20px auto;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
     border-radius: 5px;
 }
 
-.drop-zone.dragover {
-    background-color: #e9ecef;
-    border-color: #0056b3;
+section {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+section:last-child {
+    border-bottom: none;
 }
 
-body {
-    background-color: #ffffff;
+h2, h3 {
+    color: #333;
 }
 
-.card {
-    border-radius: 10px;
-    border: 1px solid #dee2e6;
+/* Forms */
+.form-group {
+    margin-bottom: 1rem;
 }
 
-.btn-outline-secondary {
-    background-color: #e9ecef;
-    border-color: #adb5bd;
-    color: #495057;
+label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
 }
 
-.btn-outline-secondary:hover {
-    background-color: #adb5bd;
-    border-color: #adb5bd;
-    color: #ffffff;
+input[type="email"],
+input[type="file"],
+select {
+    width: 100%;
+    padding: 0.7rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box; /* Include padding in width */
 }
 
-.btn-outline-danger {
-    background-color: #f8d7da;
-    border-color: #dc3545;
-    color: #dc3545;
+input[type="file"] {
+    padding: 0.3rem; /* Looks better for file inputs */
 }
 
-.btn-outline-danger:hover {
-    background-color: #dc3545;
-    border-color: #dc3545;
-    color: #ffffff;
+#drop-area {
+    border: 2px dashed #ccc;
+    border-radius: 5px;
+    padding: 25px;
+    text-align: center;
+    cursor: pointer;
+    background-color: #f9f9f9;
+    margin-top: 0.5rem; /* Space below label */
 }
 
-.btn-primary {
+#drop-area p {
+    margin: 0;
+    color: #666;
+}
+#drop-area.highlight {
+     border-color: #007bff;
+     background-color: #e9f5ff;
+}
+#drop-area input[type="file"] {
+    display: none; /* Hide default file input, use the area */
+}
+
+#file-info {
+    margin-top: 10px;
+    font-style: italic;
+    color: #555;
+}
+
+/* Buttons */
+.button, button {
+    display: inline-block;
     background-color: #007bff;
+    color: white;
+    padding: 10px 20px;
     border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 1rem;
+    margin-right: 10px; /* Spacing between buttons */
+    transition: background-color 0.2s ease;
+    vertical-align: middle; /* Align icons/text nicely */
 }
 
-.btn-primary:hover {
+button:hover, .button:hover {
     background-color: #0056b3;
 }
 
-.navbar-dark {
-    background-color: #343a40 !important;
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
 }
 
-.text-dark {
-    color: #212529 !important;
+.button-outline {
+    background-color: transparent;
+    color: #007bff;
+    border: 1px solid #007bff;
 }
-
-.text-muted {
-    color: #6c757d !important;
+.button-outline:hover {
+     background-color: #e9f5ff;
 }
+header .button { /* Style buttons in header differently */
+     background-color: #555;
+     padding: 5px 10px;
+     font-size: 0.9rem;
+ }
+ header .button:hover {
+     background-color: #777;
+ }
 
-.text-success {
-    color: #28a745;
+
+/* Flash Messages */
+.flash-messages {
+    padding: 0;
+    margin-bottom: 1rem;
 }
-
-.text-danger {
-    color: #dc3545;
+.alert {
+    padding: 0.8rem 1.2rem;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
 }
+.alert-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+.alert-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+.alert-warning { color: #856404; background-color: #fff3cd; border-color: #ffeeba; }
+.alert-info { color: #0c5460; background-color: #d1ecf1; border-color: #bee5eb; }
 
-.table {
-    border-radius: 5px;
-    overflow: hidden;
+
+/* Status & History */
+#job-status-section .status-update {
+    margin-bottom: 0.5rem;
+    padding: 10px;
+    border-left: 4px solid #ccc;
+    background-color: #f9f9f9;
 }
+#job-status-section .status-PENDING { border-left-color: #ffc107; } /* Yellow */
+#job-status-section .status-PROCESSING { border-left-color: #007bff; } /* Blue */
+#job-status-section .status-COMPLETED { border-left-color: #28a745; } /* Green */
+#job-status-section .status-FAILED { border-left-color: #dc3545; } /* Red */
 
-.table th, .table td {
-    border: 1px solid #dee2e6;
-    padding: 0.75rem;
+#job-history-list {
+    list-style: none;
+    padding: 0;
 }
-
-.table th {
-    background-color: #e9ecef;
-    color: #495057;
+#job-history-list li {
+    background-color: #f9f9f9;
+    margin-bottom: 10px;
+    padding: 15px;
+    border-radius: 4px;
+    border: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap; /* Allow wrapping on small screens */
 }
-
-.table-bordered {
-    border: 1px solid #dee2e6;
+#job-history-list li span {
+    margin-right: 10px; /* Space between elements */
+    margin-bottom: 5px; /* Spacing if wrapped */
 }
-
-/* Style for the select dropdown to match the grouped look */
-.form-select {
-    border-radius: 5px;
-    border: 1px solid #dee2e6;
-    padding: 0.5rem 1rem;
-    background-color: #ffffff;
-}
-
-/* Style optgroup headers and options */
-optgroup {
-    background-color: #f8f9fa;
+#job-history-list li .job-status {
     font-weight: bold;
-    color: #212529;
-    padding: 5px 0;
+    padding: 3px 8px;
+    border-radius: 3px;
+    color: white;
+    font-size: 0.85em;
+}
+.job-status-PENDING { background-color: #ffc107; color: #333;}
+.job-status-PROCESSING { background-color: #007bff; }
+.job-status-COMPLETED { background-color: #28a745; }
+.job-status-FAILED { background-color: #dc3545; }
+
+#job-history-list li a.download-link {
+    display: inline-block;
+    padding: 5px 10px;
+    background-color: #17a2b8; /* Info blue */
+    color: white;
+    text-decoration: none;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+#job-history-list li a.download-link:hover {
+    background-color: #138496;
 }
 
-optgroup option {
-    padding: 5px 15px;
-    background-color: #ffffff;
+/* Upload Progress */
+#upload-progress {
+    margin-top: 15px;
+    width: 100%;
 }
-
-optgroup option:hover {
-    background-color: #e9ecef;
+#upload-progress-bar {
+    width: 100%;
+    height: 10px;
 }

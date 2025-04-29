@@ -1,0 +1,255 @@
+# ./docs/api/openapi.yaml
+openapi: 3.0.0
+info:
+  title: Media Transcoding Service API
+  version: 1.0.0
+  description: |-
+    API specification for the Media Transcoding SaaS application.
+    Covers endpoints exposed by the API Gateway.
+
+servers:
+  - url: http://localhost:5001 # Local development API Gateway
+    description: Local Docker Compose environment
+  # Add production server URL once deployed
+  # - url: https://api.<my-domain>.com
+  #   description: Production environment
+
+components:
+  securitySchemes:
+    bearerAuth: # Can be referenced using security: [- bearerAuth: []]
+      type: http
+      scheme: bearer
+      bearerFormat: JWT # Optional, for documentation
+
+  schemas:
+    JobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Unique identifier for the transcoding job.
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED, UNKNOWN]
+          description: Current status of the job.
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp of when the job was submitted or last updated.
+        original_filename:
+          type: string
+          description: The original name of the uploaded file.
+        output_format:
+          type: string
+          description: The target output format.
+        download_url:
+          type: string
+          format: url
+          description: Pre-signed URL for downloading the completed file (only if status is COMPLETED).
+        error:
+          type: string
+          description: Error message if the job failed (only if status is FAILED).
+      required:
+        - job_id
+        - status
+
+    JobHistoryItem:
+      # Similar to JobStatus, potentially slightly different fields for history view
+      allOf:
+        - $ref: '#/components/schemas/JobStatus'
+      properties:
+        # Add any history-specific fields if needed
+        input_s3_key: # Maybe hide this in production API response?
+          type: string
+          description: Internal S3 key of the originally uploaded file.
+
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: A description of the error that occurred.
+      required:
+        - error
+
+paths:
+  /upload:
+    post:
+      summary: Upload media file for transcoding
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                media_file:
+                  type: string
+                  format: binary
+                  description: The audio or video file to transcode.
+                output_format:
+                  type: string
+                  description: The desired output format (e.g., 'mp4', 'mp3'). Supported formats listed elsewhere.
+                  enum: [mp4, webm, avi, mov, mkv, mp3, wav, flac, aac]
+                email:
+                  type: string
+                  format: email
+                  description: (Optional) Email address to send download link notification to. Defaults to authenticated user's email.
+              required:
+                - media_file
+                - output_format
+      responses:
+        '202': # Accepted
+          description: File upload accepted, transcoding job queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+                    description: The ID assigned to the transcoding job.
+                  message:
+                    type: string
+        '400':
+          description: Bad Request (e.g., missing file, invalid format).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (Missing or invalid JWT).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error (e.g., failed to queue job).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable (e.g., upload service down).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /status/{job_id}:
+    get:
+      summary: Get the status of a transcoding job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: The ID of the job to check.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current status of the job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatus'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+           description: Forbidden (User does not own this job).
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+           description: Internal Server Error.
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+           description: Service Unavailable (e.g., Redis down).
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs:
+    get:
+      summary: Get recent job history for the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: A list of recent job details.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobHistoryItem'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+           description: Internal Server Error.
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+           description: Service Unavailable (e.g., Redis down).
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Provides a basic health status of the API Gateway.
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+        '500':
+          description: Service is unhealthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unhealthy
+                  reason:
+                    type: string
+                    description: Optional reason for unhealthiness.

@@ -1,20 +1,22 @@
-# ./services/auth-service/Dockerfile
+# services/auth-service/Dockerfile
 FROM python:3.9-slim
 
+# Prevent Python from writing .pyc files and enable stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set working directory
 WORKDIR /app
 
-# Copy common utilities first (relative to ./services context)
-COPY common ./common 
-
-# Install dependencies (relative to ./services context)
-COPY auth-service/requirements.txt . 
+# Copy and install dependencies
+COPY services/auth-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy service-specific code (relative to ./services context)
-COPY auth-service/ . 
+# Copy service-specific code
+COPY services/auth-service/. .
 
-# Port used by the service (internally)
-EXPOSE 5001
+# Expose service port
+EXPOSE 5002
 
-# Run the OAuth-enabled application
-CMD ["python", "auth_oauth.py"]
+# Run the Flask app with Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5002", "--workers", "2", "app:app"]

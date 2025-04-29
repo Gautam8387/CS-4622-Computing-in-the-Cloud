@@ -1,232 +1,180 @@
 # ./docker-compose.yml
-version: '3.8' # Version attribute is okay for compatibility, Compose V2 ignores it.
+# Removed obsolete 'version' tag
+
 services:
-  client:
-    # Client doesn't need common, context remains ./client
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      # Ensure these are set in your .env file or uncomment and replace here
-      # FLASK_ENV: development
-      # SECRET_KEY: your_strong_random_client_secret_key_123!@#
-      # STANDALONE_MODE: False
-      # GOOGLE_CLIENT_ID: YOUR_GOOGLE_CLIENT_ID
-      # GOOGLE_CLIENT_SECRET: YOUR_GOOGLE_CLIENT_SECRET
-      # GITHUB_CLIENT_ID: YOUR_GITHUB_CLIENT_ID
-      # GITHUB_CLIENT_SECRET: YOUR_GITHUB_CLIENT_SECRET
-      # OAUTH_CALLBACK_URL: http://localhost:8000/callback
-      # API_GATEWAY_URL: http://api-gateway:5000
-      # AUTH_SERVICE_URL: http://auth-service:5001
-      - FLASK_ENV=${FLASK_ENV:-development}
-      - SECRET_KEY=${CLIENT_SECRET_KEY}
-      - STANDALONE_MODE=${STANDALONE_MODE:-False}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - OAUTH_CALLBACK_URL=${OAUTH_CALLBACK_URL:-http://localhost:8000/callback}
-      - API_GATEWAY_URL=${API_GATEWAY_URL:-http://api-gateway:5000}
-      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:5001}
-    depends_on:
-      - api-gateway
-      - auth-service
-    volumes:
-      - ./client:/app
-
-  api-gateway:
-    build:
-      context: ./services  # CHANGED context to parent 'services' dir
-      dockerfile: api-gateway/Dockerfile # Path relative to context
-    ports:
-      - "5000:5000"
-    environment:
-      # Ensure these are set in your .env file or uncomment and replace here
-      # FLASK_ENV: development
-      # SECRET_KEY: your_DIFFERENT_strong_random_gateway_secret_key_456$%^ # MUST MATCH AUTH SERVICE
-      # REDIS_URL: redis://redis:6379/0
-      # REDIS_HOST: redis
-      # REDIS_PORT: 6379
-      # UPLOAD_SERVICE_URL: http://upload-service:5002
-      # AUTH_SERVICE_URL: http://auth-service:5001
-      # CELERY_BROKER_URL: redis://redis:6379/0
-      # CELERY_RESULT_BACKEND: redis://redis:6379/0
-      - FLASK_ENV=${FLASK_ENV:-development}
-      - SECRET_KEY=${API_GATEWAY_SECRET_KEY} # Should match AUTH_SERVICE_SECRET_KEY
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=${REDIS_PORT:-6379}
-      - UPLOAD_SERVICE_URL=${UPLOAD_SERVICE_URL:-http://upload-service:5002}
-      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:5001} # For potential token introspection
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-    depends_on:
-      - redis
-      - upload-service
-      # - auth-service # Only if calling it directly (e.g., introspection)
-    volumes:
-      - ./services/api-gateway:/app # Mount specific service code
-      - ./services/common:/app/common # Mount common code
-
-  auth-service:
-    build:
-      context: ./services  # CHANGED context to parent 'services' dir
-      dockerfile: auth-service/Dockerfile # Path relative to context
-    ports:
-      # Port only needs exposure if called directly by client's *backend* or other external service
-      - "5001:5001"
-    environment:
-      # Ensure these are set in your .env file or uncomment and replace here
-      # FLASK_ENV: development
-      # SECRET_KEY: your_DIFFERENT_strong_random_gateway_secret_key_456$%^ # MUST MATCH API GATEWAY
-      # REDIS_URL: redis://redis:6379/0
-      # GOOGLE_CLIENT_ID: YOUR_GOOGLE_CLIENT_ID
-      # GOOGLE_CLIENT_SECRET: YOUR_GOOGLE_CLIENT_SECRET
-      # GITHUB_CLIENT_ID: YOUR_GITHUB_CLIENT_ID
-      # GITHUB_CLIENT_SECRET: YOUR_GITHUB_CLIENT_SECRET
-      - FLASK_ENV=${FLASK_ENV:-development}
-      - SECRET_KEY=${AUTH_SERVICE_SECRET_KEY} # Should match API_GATEWAY_SECRET_KEY
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0} # For optional blocklisting
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-    depends_on:
-      - redis
-    volumes:
-      - ./services/auth-service:/app # Mount specific service code
-      - ./services/common:/app/common # Mount common code
-
-  upload-service:
-    build:
-      context: ./services  # CHANGED context to parent 'services' dir
-      dockerfile: upload-service/Dockerfile # Path relative to context
-    ports:
-      # Not externally exposed, only called by gateway
-      - "5002:5002"
-    environment:
-      # Ensure these are set in your .env file or uncomment and replace here
-      # FLASK_ENV: development
-      # S3_ENDPOINT_URL: http://minio:9000
-      # S3_ACCESS_KEY: minioadmin
-      # S3_SECRET_KEY: minioadmin
-      # S3_BUCKET: transcoding-bucket
-      - FLASK_ENV=${FLASK_ENV:-development}
-      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
-      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
-      - S3_BUCKET=${S3_BUCKET:-transcoding-bucket}
-    depends_on:
-      - minio
-    volumes:
-      - ./services/upload-service:/app # Mount specific service code
-      - ./services/common:/app/common # Mount common code
-
-  transcoding-service:
-    build:
-      context: ./services  # CHANGED context to parent 'services' dir
-      dockerfile: transcoding-service/Dockerfile # Path relative to context
-    environment:
-      # Ensure these are set in your .env file or uncomment and replace here
-      # Celery Worker Config (Inherited from common via env)
-      # CELERY_BROKER_URL: redis://redis:6379/0
-      # CELERY_RESULT_BACKEND: redis://redis:6379/0
-      # S3 Config (Inherited from common via env)
-      # S3_ENDPOINT_URL: http://minio:9000
-      # S3_ACCESS_KEY: minioadmin
-      # S3_SECRET_KEY: minioadmin
-      # S3_BUCKET: transcoding-bucket
-      # Notification Service Config (Inherited from common via env)
-      # SMTP_HOST: smtp.gmail.com
-      # SMTP_PORT: 587
-      # SMTP_USER: your-email@example.com
-      # SMTP_PASSWORD: your-email-password
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0} # Needed for direct redis client in task
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=${REDIS_PORT:-6379}
-      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
-      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
-      - S3_BUCKET=${S3_BUCKET:-transcoding-bucket}
-      - SMTP_HOST=${SMTP_HOST} # For sending notification task
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - SMTP_USE_TLS=${SMTP_USE_TLS:-True}
-    depends_on:
-      - redis
-      - minio
-      # Workers discover tasks via broker, no explicit depends_on needed for notification service
-    volumes:
-      - ./services/transcoding-service:/app # Mount specific service code
-      - ./services/common:/app/common # Mount common code
-      - transcoding-tmp:/tmp # Volume for temporary ffmpeg files
-
-  notification-service:
-    build:
-      context: ./services  # CHANGED context to parent 'services' dir
-      dockerfile: notification-service/Dockerfile # Path relative to context
-    environment:
-      # Ensure these are set in your .env file or uncomment and replace here
-      # Celery Worker Config (Inherited from common via env)
-      # CELERY_BROKER_URL: redis://redis:6379/0
-      # CELERY_RESULT_BACKEND: redis://redis:6379/0 # Backend might not be strictly needed
-      # CELERY_QUEUE_NAME: notification_tasks # Optional: Listen on a specific queue
-      # SMTP Config (Inherited from common via env)
-      # SMTP_HOST: smtp.gmail.com
-      # SMTP_PORT: 587
-      # SMTP_USER: your-email@example.com
-      # SMTP_PASSWORD: your-email-password
-      # SMTP_USE_TLS: True
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - CELERY_QUEUE_NAME=${CELERY_QUEUE_NAME:-celery} # Default queue
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - SMTP_USE_TLS=${SMTP_USE_TLS:-True}
-    depends_on:
-      - redis
-    volumes:
-      - ./services/notification-service:/app # Mount specific service code
-      - ./services/common:/app/common # Mount common code
-
+  # --- Infrastructure Services ---
   redis:
-    image: redis:7-alpine # Use specific version
+    image: redis:6-alpine
     ports:
-      - "6379:6379"
+      - "6379:6379" # Keep exposed for potential debugging tools
     volumes:
       - redis-data:/data
+    networks:
+      - app-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
-  minio:
+  minio: # S3 Compatible Object Storage
     image: minio/minio:latest
     ports:
-      - "9000:9000" # API
-      - "9001:9001" # Console
+      - "9000:9000"  # S3 API Port
+      - "9001:9001"  # MinIO Console Port <-- ADDED Console Port
     environment:
-      # Set via .env file
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    command: server /data --console-address ":9001"
+      # Correct ENV VARS for MinIO server itself
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - minio-data:/data
-    healthcheck:
+    # Correct command to enable console
+    command: server /data --console-address ":9001"
+    networks:
+      - app-network
+    healthcheck: # <-- ADDED Healthcheck
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
+    restart: unless-stopped # <-- ADDED Restart Policy
+
+  mailhog: # Email Catching Service
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025" # Local SMTP server port
+      - "8025:8025" # MailHog Web UI port
+    networks:
+      - app-network
+    restart: unless-stopped # <-- ADDED Restart Policy
+
+  # --- Application Services ---
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports:
+      - "5000:5000" # UI access from host browser
+    env_file:
+      - .env
+    volumes: # <-- ADDED Volumes for local development code changes
+      - ./client:/app
+    depends_on:
+      api-gateway: # Client UI calls API Gateway JS
+        condition: service_healthy
+      auth-service: # Client backend calls Auth Service during callback
+        condition: service_started
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    ports:
+      - "5001:5001" # API access from client browser JS
+    env_file:
+      - .env
+    volumes: # <-- ADDED Volumes for local development code changes
+      - ./services/api-gateway:/app
+      - ./services/common:/app/common # Needs access to common
+    depends_on:
+      redis: # Uses Redis for Celery tasks & metadata
+        condition: service_healthy
+      upload-service: # Calls upload service directly
+        condition: service_started
+      # auth-service dependency less critical at runtime, but okay for startup order
+      auth-service:
+        condition: service_started
+    networks:
+      - app-network
+    healthcheck: # Keep healthcheck
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    # ports: # <-- REMOVED: No need to expose port to host
+    #  - "5002:5002"
+    env_file:
+      - .env
+    volumes: # <-- ADDED Volumes for local development code changes
+      - ./services/auth-service:/app
+    depends_on:
+      redis: # Good practice for startup order, even if not directly used now
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  upload-service:
+    build:
+      context: .
+      dockerfile: services/upload-service/Dockerfile
+    # ports: # <-- REMOVED: No need to expose port to host
+    #  - "5003:5003"
+    env_file:
+      - .env
+    volumes: # <-- ADDED Volumes for local development code changes
+      - ./services/upload-service:/app
+      - ./services/common:/app/common # Needs access to common
+    depends_on:
+      minio: # Directly needs MinIO
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  notification-worker: # Renamed from notification-service for clarity
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    env_file:
+      - .env
+    volumes: # <-- ADDED Volumes for local development code changes
+      - ./services/notification-service:/app
+      - ./services/common:/app/common # Needs access to common
+    depends_on: # Refined dependencies
+      redis:
+        condition: service_healthy
+      mailhog: # Needs SMTP target
+        condition: service_started # Mailhog starts fast
+      minio: # Needs MinIO for presigned URLs via common
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  transcoding-worker: # Renamed from transcoding-service for clarity
+    build:
+      context: .
+      dockerfile: services/transcoding-service/Dockerfile
+    env_file:
+      - .env
+    volumes: # <-- ADDED Volumes for local development code changes
+      - ./services/transcoding-service:/app
+      - ./services/common:/app/common # Needs access to common
+    depends_on: # Refined dependencies
+      redis:
+        condition: service_healthy
+      minio: # Needs MinIO for download/upload
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
 
 volumes:
   redis-data:
   minio-data:
-  transcoding-tmp:
+
+networks:
+  app-network:
+    driver: bridge

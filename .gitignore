@@ -14,3 +14,6 @@ tmp/
 
 # Environment files
 .env
+
+# Data
+redis_local/
